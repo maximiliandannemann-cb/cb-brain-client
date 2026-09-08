@@ -2,7 +2,7 @@
 """Gemeinsamer Kern des Plugins cb-brain-client: spricht mit dem CleverBrands-Tool über den
 persönlichen Schlüssel (Bearer cbw_…). Kein GitHub, kein GBrain-Login — das Tool ist die einzige Tür.
 
-Dateien:  ~/.cb-brain/token      der Schlüssel aus dem Tool (Wiki › Verbinden)
+Dateien:  ~/.cb-brain/tool-key   der Schlüssel aus dem Tool (Wiki › Verbinden)
           ~/.cb-brain/tool-url   optional, Standard https://company-interface.vercel.app
 
 Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speichern; url nur für Vorschau-Adressen
@@ -14,7 +14,7 @@ Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speic
 import json, os, stat, sys, urllib.error, urllib.request
 
 HOME = os.path.expanduser("~/.cb-brain")
-TOKEN_FILE = os.path.join(HOME, "token")
+TOKEN_FILE = os.path.join(HOME, "tool-key")
 URL_FILE = os.path.join(HOME, "tool-url")
 DEFAULT_URL = "https://company-interface.vercel.app"
 TIMEOUT = 8.0
