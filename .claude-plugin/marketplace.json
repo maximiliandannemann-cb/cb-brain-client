@@ -1,0 +1,11 @@
+{
+  "name": "cleverbrands",
+  "owner": { "name": "CleverBrands" },
+  "plugins": [
+    {
+      "name": "cb-brain-client",
+      "source": "./",
+      "description": "CleverBrands Wiki in Claude Code: Kontext-Hook, /drop, /wiki, /wiki-setup, /wiki-extract."
+    }
+  ]
+}
