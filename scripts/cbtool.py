@@ -5,7 +5,7 @@ persönlichen Schlüssel (Bearer cbw_…). Kein GitHub, kein GBrain-Login — da
 Dateien:  ~/.cb-brain/token      der Schlüssel aus dem Tool (Wiki › Verbinden)
           ~/.cb-brain/tool-url   optional, Standard https://company-interface.vercel.app
 
-Befehle:  cbtool.py setup <schlüssel>      Schlüssel prüfen (Ping) und speichern
+Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speichern; url nur für Vorschau-Adressen
           cbtool.py ping                    Verbindung prüfen
           cbtool.py search <frage> [n]      Treffer als JSON
           cbtool.py drop <text>             Text in die Inbox
@@ -18,6 +18,13 @@ TOKEN_FILE = os.path.join(HOME, "token")
 URL_FILE = os.path.join(HOME, "tool-url")
 DEFAULT_URL = "https://company-interface.vercel.app"
 TIMEOUT = 8.0
+
+
+def _read(path: str) -> str | None:
+    try:
+        return open(path, encoding="utf-8").read().strip() or None
+    except OSError:
+        return None
 
 
 def tool_url() -> str:
@@ -43,8 +50,11 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
     if not key:
         raise SystemExit("Kein Schlüssel. Im Tool unter Wiki › Verbinden erzeugen, dann: /wiki-setup <schlüssel>")
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(tool_url() + path, data=data, method=method, headers={
-        "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"})
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"}
+    bypass = os.environ.get("CB_VERCEL_BYPASS") or _read(os.path.join(HOME, "bypass"))
+    if bypass:
+        headers["x-vercel-protection-bypass"] = bypass  # nur für Vorschau-Adressen hinter Vercel-SSO
+    req = urllib.request.Request(tool_url() + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8") or "{}")
@@ -60,12 +70,16 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
         raise SystemExit(f"Tool nicht erreichbar ({tool_url()}): {e.reason}")
 
 
-def cmd_setup(key: str) -> None:
+def cmd_setup(key: str, url: str | None = None) -> None:
     key = key.strip()
     if not key.startswith("cbw_") or len(key) != 36:
         raise SystemExit("Das sieht nicht wie ein Schlüssel aus (erwartet cbw_ und 32 Zeichen).")
-    res = call("/api/brain-read/ping", method="GET", key=key)
     os.makedirs(HOME, exist_ok=True)
+    if url:
+        # Vorschau-Adresse aus dem Tool (die Onboarding-Seite hängt sie an, wenn sie nicht auf Produktion läuft).
+        with open(URL_FILE, "w", encoding="utf-8") as f:
+            f.write(url.strip().rstrip("/") + "\n")
+    res = call("/api/brain-read/ping", method="GET", key=key)
     with open(TOKEN_FILE, "w", encoding="utf-8") as f:
         f.write(key + "\n")
     os.chmod(TOKEN_FILE, stat.S_IRUSR | stat.S_IWUSR)
@@ -109,7 +123,7 @@ def main(argv: list[str]) -> None:
         return
     cmd, args = argv[1], argv[2:]
     if cmd == "setup" and args:
-        cmd_setup(args[0])
+        cmd_setup(args[0], args[1] if len(args) > 1 else None)
     elif cmd == "ping":
         cmd_ping()
     elif cmd == "search" and args:
