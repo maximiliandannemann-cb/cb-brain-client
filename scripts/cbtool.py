@@ -79,6 +79,12 @@ def cmd_setup(key: str, url: str | None = None) -> None:
         # Vorschau-Adresse aus dem Tool (die Onboarding-Seite hängt sie an, wenn sie nicht auf Produktion läuft).
         with open(URL_FILE, "w", encoding="utf-8") as f:
             f.write(url.strip().rstrip("/") + "\n")
+    else:
+        # Ohne Adresse gilt wieder Produktion: eine alte Vorschau-Adresse darf nicht hängen bleiben.
+        try:
+            os.remove(URL_FILE)
+        except OSError:
+            pass
     res = call("/api/brain-read/ping", method="GET", key=key)
     with open(TOKEN_FILE, "w", encoding="utf-8") as f:
         f.write(key + "\n")
