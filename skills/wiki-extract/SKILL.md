@@ -9,10 +9,10 @@ Argument optional: ein Ordner. Standard: der aktuelle Ordner.
 
 ## Schritte
 
-1. Markdown-Dateien im Ordner suchen, die CleverBrands betreffen (Lieferanten, Produkte, Marken, Amazon, Bestellungen, Team-Entscheidungen). Dateien mit privaten Themen (Finanzen der Person, Gesundheit, Tagebuch) auslassen, auch wenn CleverBrands darin vorkommt.
+1. Startzeit merken: `date +%s` ausführen und den Wert behalten. Dann Markdown-Dateien im Ordner suchen, die CleverBrands betreffen (Lieferanten, Produkte, Marken, Amazon, Bestellungen, Team-Entscheidungen). Dateien mit privaten Themen (Finanzen der Person, Gesundheit, Tagebuch) auslassen, auch wenn CleverBrands darin vorkommt.
 2. Eine Liste zeigen: Datei, ein Satz warum, geschätzte Form (Lieferant, Produkt, Thema, Entscheidung, SOP, Learning). Höchstens 20 Einträge je Durchgang.
 3. Auf die Bestätigung warten. Der Nutzer wählt („alle“, „1, 3, 5“ oder „keine“).
-4. Die gewählten Dateien einwerfen: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" drop-file <pfad> [...]`, höchstens 20 je Aufruf.
+4. Die gewählten Dateien einwerfen: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" drop-file --started <startzeit> --scanned <anzahl geprüfter dateien> <pfad> [...]`, höchstens 20 je Aufruf. Die beiden Maße zeigen im Tool, wie lange eine Extraktion dauert; Inhalte gehen nicht mit.
 5. Die Inbox-Pfade in einem Satz melden.
 
 Nie ohne Bestätigung einwerfen. Dateien nicht verändern.

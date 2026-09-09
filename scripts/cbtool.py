@@ -8,10 +8,11 @@ Dateien:  ~/.cb-brain/tool-key   der Schlüssel aus dem Tool (Wiki › Verbinden
 Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speichern; url nur für Vorschau-Adressen
           cbtool.py ping                    Verbindung prüfen
           cbtool.py search <frage> [n]      Treffer als JSON
-          cbtool.py drop <text>             Text in die Inbox
-          cbtool.py drop-file <pfad> [...]  Dateien (.md/.txt) in die Inbox
+          cbtool.py drop [--via session] <text>                 Text in die Inbox (session = Sitzungsauszug)
+          cbtool.py drop-file [--started <epoch>] [--scanned <n>] <pfad> [...]
+                                            Dateien (.md/.txt) in die Inbox; Maße für /wiki-extract
 """
-import json, os, stat, sys, urllib.error, urllib.request
+import json, os, stat, sys, time, urllib.error, urllib.request
 
 HOME = os.path.expanduser("~/.cb-brain")
 TOKEN_FILE = os.path.join(HOME, "tool-key")
@@ -45,12 +46,13 @@ def token() -> str | None:
         return None
 
 
-def call(path: str, body=None, method: str = "POST", key: str | None = None, timeout: float = TIMEOUT):
+def call(path: str, body=None, method: str = "POST", key: str | None = None, timeout: float = TIMEOUT, via: str = "skill"):
     key = key or token()
     if not key:
         raise SystemExit("Kein Schlüssel. Im Tool unter Wiki › Verbinden erzeugen, dann: /wiki-setup <schlüssel>")
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"}
+    # X-CB-Via: der Weg der Anfrage für die Messung im Tool (hook | skill | session | extraktion), kein Inhalt.
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json", "X-CB-Via": via}
     bypass = os.environ.get("CB_VERCEL_BYPASS") or _read(os.path.join(HOME, "bypass"))
     if bypass:
         headers["x-vercel-protection-bypass"] = bypass  # nur für Vorschau-Adressen hinter Vercel-SSO
@@ -102,14 +104,17 @@ def cmd_search(query: str, limit: int = 5) -> None:
     print(json.dumps(res.get("hits", []), ensure_ascii=False, indent=2))
 
 
-def cmd_drop(text: str) -> None:
-    res = call("/api/brain-read/drop", {"text": text})
+def cmd_drop(text: str, via: str | None = None) -> None:
+    body = {"text": text}
+    if via == "session":
+        body["via"] = "session"  # Sitzungsauszug aus /drop session, nur für die Messung
+    res = call("/api/brain-read/drop", body, via=via or "skill")
     for p in res.get("paths", []):
         print(f"In der Inbox: {p}")
     print("Sichtbar im Wiki nach dem nächsten Ingest-Lauf (nachts).")
 
 
-def cmd_drop_files(paths: list[str]) -> None:
+def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int | None = None) -> None:
     files = []
     for p in paths:
         p = os.path.expanduser(p)
@@ -117,10 +122,26 @@ def cmd_drop_files(paths: list[str]) -> None:
             raise SystemExit(f"Nur .md oder .txt: {p}")
         with open(p, encoding="utf-8", errors="replace") as f:
             files.append({"name": os.path.basename(p), "text": f.read()})
-    res = call("/api/brain-read/drop", {"files": files})
+    body = {"files": files}
+    if started or scanned:
+        # Maße aus /wiki-extract (Dauer seit Start in ms, geprüfte Dateien), keine Inhalte.
+        body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned}
+    res = call("/api/brain-read/drop", body, via="extraktion")
     for p in res.get("paths", []):
         print(f"In der Inbox: {p}")
     print("Sichtbar im Wiki nach dem nächsten Ingest-Lauf (nachts).")
+
+
+def _pop_option(args: list[str], name: str) -> str | None:
+    """Entfernt `--name wert` aus args und gibt wert zurück."""
+    if name in args:
+        i = args.index(name)
+        if i + 1 < len(args):
+            val = args[i + 1]
+            del args[i:i + 2]
+            return val
+        del args[i]
+    return None
 
 
 def main(argv: list[str]) -> None:
@@ -135,9 +156,12 @@ def main(argv: list[str]) -> None:
     elif cmd == "search" and args:
         cmd_search(args[0], int(args[1]) if len(args) > 1 else 5)
     elif cmd == "drop" and args:
-        cmd_drop(" ".join(args))
+        via = _pop_option(args, "--via")
+        cmd_drop(" ".join(args), via)
     elif cmd == "drop-file" and args:
-        cmd_drop_files(args)
+        started = _pop_option(args, "--started")
+        scanned = _pop_option(args, "--scanned")
+        cmd_drop_files(args, float(started) if started else None, int(scanned) if scanned else None)
     else:
         print(__doc__)
         raise SystemExit(2)

@@ -24,7 +24,8 @@ def main() -> None:
             return
         body = json.dumps({"query": prompt[:500], "limit": LIMIT}).encode()
         req = urllib.request.Request(tool_url() + "/api/brain-read/search", data=body, headers={
-            "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json"})
+            "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json",
+            "X-CB-Via": "hook"})
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             hits = json.loads(r.read().decode("utf-8")).get("hits", [])
         if not hits:
