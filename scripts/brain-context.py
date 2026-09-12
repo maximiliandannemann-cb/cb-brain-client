@@ -10,7 +10,8 @@ try:
 except Exception:
     sys.exit(0)
 
-LIMIT, MAX_CHARS, TIMEOUT = 5, 3600, 2.5
+# 4 s statt 2,5: live gemessen 12.09. sind Ping und Suche über Vercel kalt 1,6 bis 1,8 s; mit 2,5 s fiel der Kontext auf kalten Funktionen still weg.
+LIMIT, MAX_CHARS, TIMEOUT = 5, 3600, 4.0
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
 {
   "name": "cb-brain-client",
   "description": "CleverBrands Wiki in Claude Code: jede Frage bekommt Wiki-Kontext, /drop wirft Wissen in die Inbox, /wiki fragt das Wiki.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": { "name": "CleverBrands" },
   "keywords": ["cleverbrands", "wiki", "company-brain"]
 }

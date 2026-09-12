@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/brain-context.py\"",
-            "timeout": 4
+            "timeout": 6
           }
         ]
       }
