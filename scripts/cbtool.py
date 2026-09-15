@@ -157,7 +157,12 @@ def main(argv: list[str]) -> None:
         cmd_search(args[0], int(args[1]) if len(args) > 1 else 5)
     elif cmd == "drop" and args:
         via = _pop_option(args, "--via")
-        cmd_drop(" ".join(args), via)
+        text = " ".join(args).strip()
+        if text.startswith("-") or text.lower() in {"help", "hilfe", "?"}:
+            # 14.09.: „/drop --help“ landete wortwörtlich in der Inbox. Optionen und Hilfe-Wörter sind kein Wissen.
+            print("Nicht eingeworfen: Das sieht nach einer Option oder Hilfe-Anfrage aus.\n" + __doc__)
+            raise SystemExit(2)
+        cmd_drop(text, via)
     elif cmd == "drop-file" and args:
         started = _pop_option(args, "--started")
         scanned = _pop_option(args, "--scanned")
