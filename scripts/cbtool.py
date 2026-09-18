@@ -70,10 +70,16 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as e:
+        msg = ""
         try:
-            msg = json.loads(e.read().decode("utf-8")).get("error", "")
+            payload = json.loads(e.read().decode("utf-8"))
+            msg = payload.get("error", "")
+            # Der Server nennt bei einem Teilfehler die schon geschriebenen Pfade; sie gehören
+            # in die Meldung, sonst wirft der Nutzer alles erneut ein (Astra-Review 18.09.2026).
+            for p in payload.get("paths", []):
+                print(f"In der Inbox: {p}")
         except Exception:
-            msg = ""
+            pass
         if e.code == 401:
             raise SystemExit("Schlüssel wird nicht angenommen (401). Im Tool unter Wiki › Verbinden prüfen oder neu erzeugen.")
         raise SystemExit(f"Tool antwortet {e.code}: {msg}")
@@ -142,8 +148,11 @@ def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int 
         if len(text.strip()) == 0:
             leer.append(name)
             continue
-        if len(text.strip()) > MAX_CHARS_FILE:
-            zu_gross.append(f"{name} ({len(text.strip())} Zeichen)")
+        # Wie JavaScript zählen (UTF-16-Einheiten), sonst lässt der Client Dateien durch,
+        # die der Server ablehnt (Astra-Review 18.09.2026, dritter Durchgang, Befund 3).
+        laenge = len(text.strip().encode("utf-16-le")) // 2
+        if laenge > MAX_CHARS_FILE:
+            zu_gross.append(f"{name} ({laenge} Zeichen)")
             continue
         files.append({"name": name, "text": text})
     if zu_gross:
@@ -164,13 +173,12 @@ def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int 
             body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned, "total": len(files)}
         try:
             res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via="extraktion")
-        except SystemExit:
+        except BaseException:  # auch Zeitlimit und Abbruch: der Nutzer muss den Stand sehen
             # Was vorher durchging, liegt im Eingang. Das muss der Nutzer sehen, sonst wirft er
             # alles erneut ein (Astra-Review 18.09.2026, zweiter Durchgang, Befund 3).
             for p in paths:
                 print(f"In der Inbox: {p}")
-            if paths:
-                print(f"Abbruch bei Datei {i + 1} von {len(files)}; die oben genannten sind bereits eingeworfen.")
+            print(f"Abbruch bei Stapel ab Datei {i + 1} von {len(files)}. Die oben genannten liegen im Eingang; ob dieser Stapel noch angekommen ist, ist offen. Vor einem erneuten Versuch im Tool unter Wiki nachsehen.")
             raise
         paths.extend(res.get("paths", []))
     for p in paths:
