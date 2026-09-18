@@ -2,12 +2,23 @@
 """UserPromptSubmit-Hook: schickt den Prompt an die Wiki-Suche des Tools und gibt bis zu fünf
 Treffer als <brain-context> zurück. Nie blockieren: jeder Fehler, fehlender Schlüssel und jedes
 Zeitlimit enden still mit Exit 0 (Spec 8.2). Slash-Befehle und kurze Prompts überspringen."""
+from __future__ import annotations
+
 import json, os, re, sys, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     from cbtool import token, tool_url
-except Exception:
+except Exception as e:  # noqa: BLE001 - der Hook darf nie blockieren
+    # Still gegenüber dem Nutzer, aber nachlesbar: ein kaputtes cbtool.py (etwa zu altes Python,
+    # Issue #1) ließ den Kontext monatelang lautlos ausfallen. Eine Zeile ins Log, dann Exit 0.
+    try:
+        log = os.path.expanduser("~/.cb-brain/logs/hook.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "a", encoding="utf-8") as fh:
+            fh.write(f"{__import__('datetime').datetime.now().isoformat(timespec='seconds')} import cbtool: {type(e).__name__}: {e}\n")
+    except Exception:
+        pass
     sys.exit(0)
 
 # 4 s statt 2,5: live gemessen 12.09. sind Ping und Suche über Vercel kalt 1,6 bis 1,8 s; mit 2,5 s fiel der Kontext auf kalten Funktionen still weg.

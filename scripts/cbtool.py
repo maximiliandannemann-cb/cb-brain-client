@@ -12,6 +12,10 @@ Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speic
           cbtool.py drop-file [--started <epoch>] [--scanned <n>] <pfad> [...]
                                             Dateien (.md/.txt) in die Inbox; Maße für /wiki-extract
 """
+# macOS bringt ab Werk nur Python 3.9 mit, und `python3` zeigt ohne Homebrew darauf (Issue #1, 18.09.).
+# Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
+from __future__ import annotations
+
 import json, os, stat, sys, time, urllib.error, urllib.request
 
 HOME = os.path.expanduser("~/.cb-brain")

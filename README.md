@@ -2,6 +2,10 @@
 
 Claude-Code-Plugin für das CleverBrands-Wiki. Spricht nur mit dem Tool (`company-interface`), kein GitHub-Konto, kein weiterer Login.
 
+## Voraussetzung
+
+Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `python3 --version`. Wenn ein Befehl des Plugins mit einer Python-Meldung abbricht, hilft die Version im Fehlertext weiter; bis v0.1.6 brauchte das Plugin 3.10 und brach auf der macOS-Systemversion 3.9 ab (Issue #1).
+
 ## Einrichten (drei Schritte, aus dem Tool heraus)
 
 1. Im Tool: Wiki › **Verbinden** › Schlüssel erzeugen.
@@ -14,6 +18,10 @@ Claude-Code-Plugin für das CleverBrands-Wiki. Spricht nur mit dem Tool (`compan
 3. In Claude Code: `/wiki-setup <schlüssel>`.
 
 Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
+
+## Wenn der Wiki-Kontext fehlt
+
+Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was er gefunden hat, steht in `~/.cb-brain/logs/hook.log`, sobald er das Skript nicht laden kann.
 
 ## Was liegt wo
 
