@@ -23,6 +23,11 @@ TOKEN_FILE = os.path.join(HOME, "tool-key")
 URL_FILE = os.path.join(HOME, "tool-url")
 DEFAULT_URL = "https://company-interface.vercel.app"
 TIMEOUT = 8.0
+# Dateien schreibt der Server einzeln ins Inbox-Repo, ein Commit je Datei, rund 0,7 s je Stück.
+# 21 Dateien liefen deshalb am 18.09. in den 8-Sekunden-Abbruch, während der Server weiterschrieb;
+# die Wiederholung legte alles doppelt an. Drop und drop-file warten länger (Issue #1 im Tool-Repo).
+TIMEOUT_DROP = 180.0
+BATCH_FILES = 5  # je Aufruf, damit eine Störung höchstens fünf Dateien betrifft
 
 
 def _read(path: str) -> str | None:
@@ -112,7 +117,7 @@ def cmd_drop(text: str, via: str | None = None) -> None:
     body = {"text": text}
     if via == "session":
         body["via"] = "session"  # Sitzungsauszug aus /drop session, nur für die Messung
-    res = call("/api/brain-read/drop", body, via=via or "skill")
+    res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via=via or "skill")
     for p in res.get("paths", []):
         print(f"In der Inbox: {p}")
     print("Sichtbar im Wiki nach dem nächsten Ingest-Lauf (nachts).")
@@ -126,12 +131,17 @@ def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int 
             raise SystemExit(f"Nur .md oder .txt: {p}")
         with open(p, encoding="utf-8", errors="replace") as f:
             files.append({"name": os.path.basename(p), "text": f.read()})
-    body = {"files": files}
-    if started or scanned:
-        # Maße aus /wiki-extract (Dauer seit Start in ms, geprüfte Dateien), keine Inhalte.
-        body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned}
-    res = call("/api/brain-read/drop", body, via="extraktion")
-    for p in res.get("paths", []):
+    # In Stapeln senden: der Server schreibt einen Commit je Datei, ein großer Aufruf lief am 18.09.
+    # in den Abbruch, während er weiterschrieb. Der letzte Stapel trägt die Maße aus /wiki-extract.
+    paths = []
+    for i in range(0, len(files), BATCH_FILES):
+        batch = files[i:i + BATCH_FILES]
+        body = {"files": batch}
+        if (started or scanned) and i + BATCH_FILES >= len(files):
+            body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned}
+        res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via="extraktion")
+        paths.extend(res.get("paths", []))
+    for p in paths:
         print(f"In der Inbox: {p}")
     print("Sichtbar im Wiki nach dem nächsten Ingest-Lauf (nachts).")
 
