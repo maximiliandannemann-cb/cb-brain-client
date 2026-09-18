@@ -138,7 +138,9 @@ def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int 
         batch = files[i:i + BATCH_FILES]
         body = {"files": batch}
         if (started or scanned) and i + BATCH_FILES >= len(files):
-            body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned}
+            # `total` ist die Zahl aller Dateien dieses Einwurfs; ohne sie zählte die Messung nur
+            # den letzten Stapel (Astra-Review 18.09.2026, Befund 6).
+            body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned, "total": len(files)}
         res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via="extraktion")
         paths.extend(res.get("paths", []))
     for p in paths:
