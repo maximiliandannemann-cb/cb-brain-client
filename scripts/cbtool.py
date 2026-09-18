@@ -123,14 +123,35 @@ def cmd_drop(text: str, via: str | None = None) -> None:
     print("Sichtbar im Wiki nach dem nächsten Ingest-Lauf (nachts).")
 
 
+MAX_CHARS_FILE = 400_000  # Grenze des Eingangs; darüber lehnt der Server ab (413)
+
+
 def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int | None = None) -> None:
+    # Erst alles lesen und prüfen, dann senden: Sonst liegen die ersten Stapel schon im Eingang,
+    # während der Abbruch behauptet, es sei nichts eingeworfen (Astra-Review 18.09.2026).
     files = []
+    zu_gross = []
+    leer = []
     for p in paths:
         p = os.path.expanduser(p)
         if not p.lower().endswith((".md", ".txt", ".markdown")):
             raise SystemExit(f"Nur .md oder .txt: {p}")
         with open(p, encoding="utf-8", errors="replace") as f:
-            files.append({"name": os.path.basename(p), "text": f.read()})
+            text = f.read()
+        name = os.path.basename(p)
+        if len(text.strip()) == 0:
+            leer.append(name)
+            continue
+        if len(text.strip()) > MAX_CHARS_FILE:
+            zu_gross.append(f"{name} ({len(text.strip())} Zeichen)")
+            continue
+        files.append({"name": name, "text": text})
+    if zu_gross:
+        raise SystemExit("Zu groß für den Eingang (Grenze %d Zeichen), nichts eingeworfen:\n  %s\nBitte teilen und erneut einwerfen." % (MAX_CHARS_FILE, "\n  ".join(zu_gross)))
+    if leer:
+        print(f"Übersprungen, weil leer: {', '.join(leer)}")
+    if not files:
+        raise SystemExit("Keine Datei mit Inhalt.")
     # In Stapeln senden: der Server schreibt einen Commit je Datei, ein großer Aufruf lief am 18.09.
     # in den Abbruch, während er weiterschrieb. Der letzte Stapel trägt die Maße aus /wiki-extract.
     paths = []
@@ -141,7 +162,16 @@ def cmd_drop_files(paths: list[str], started: float | None = None, scanned: int 
             # `total` ist die Zahl aller Dateien dieses Einwurfs; ohne sie zählte die Messung nur
             # den letzten Stapel (Astra-Review 18.09.2026, Befund 6).
             body["extract"] = {"ms": int((time.time() - started) * 1000) if started else None, "scanned": scanned, "total": len(files)}
-        res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via="extraktion")
+        try:
+            res = call("/api/brain-read/drop", body, timeout=TIMEOUT_DROP, via="extraktion")
+        except SystemExit:
+            # Was vorher durchging, liegt im Eingang. Das muss der Nutzer sehen, sonst wirft er
+            # alles erneut ein (Astra-Review 18.09.2026, zweiter Durchgang, Befund 3).
+            for p in paths:
+                print(f"In der Inbox: {p}")
+            if paths:
+                print(f"Abbruch bei Datei {i + 1} von {len(files)}; die oben genannten sind bereits eingeworfen.")
+            raise
         paths.extend(res.get("paths", []))
     for p in paths:
         print(f"In der Inbox: {p}")
