@@ -7,6 +7,7 @@
 - `bestand` fragt 200 Produkte ab (das Tool kürzt sonst bei 50).
 - `absatz` markiert Conversion-Werte, die Tage ohne Sitzungen mitzählen (Historie vor 11.07.2026).
 - Mehrdeutige Bestellnummer: die möglichen Nummern stehen in der Meldung (höchstens zehn).
+- CLAUDE-Abschnitt und README nennen `/ware` und `/aufgaben`. Bestehende CLAUDE.md-Abschnitte ergänzt `/wiki-setup` nicht von selbst.
 
 ## 0.2.0 (14.10.2026)
 
