@@ -94,7 +94,7 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
         if e.code == 401:
             raise SystemExit("Schlüssel wird nicht angenommen (401). Im Tool unter Wiki › Verbinden prüfen oder neu erzeugen.")
         if plain_errors:
-            if namen:
+            if namen and "Möglich:" not in msg:  # nicht doppelt, falls der Server die Namen schon nennt
                 msg = (msg.rstrip() + (" " if msg.rstrip().endswith(".") else ". ") if msg else "") + "Möglich: " + ", ".join(namen)
             raise SystemExit(msg or f"Tool antwortet {e.code}.")
         raise SystemExit(f"Tool antwortet {e.code}: {msg}")

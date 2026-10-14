@@ -28,5 +28,6 @@ Nur wenn die Person es verlangt („leg an“, „mach eine Aufgabe“): `aufgab
 
 ## Fehler und Grenzen
 
-- Nennt die Ausgabe „Kein Konto …“ mit einer Liste möglicher Namen: den passenden Namen bei der Person erfragen, nicht raten.
+- Namen für `--fuer` gehen auch als eindeutige Kurzform ab drei Zeichen („Max“, „Mau“).
+- Endet die Ausgabe mit „Möglich: <Namen>“: den passenden Namen bei der Person erfragen, nicht raten.
 - Löschen geht nur im Tool; dafür den Link aus `aufgabe CB-123` nennen.
