@@ -906,16 +906,12 @@ def cmd_absatz(args: list[str]) -> None:
     sh = res.get("shops")
     if sh is not None:
         shops = sh.get("shops") or []
-        print("Shops:" if shops else "Shops: keine")
-        for s in shops:
-            teile = [s.get("shop") or "?"]
-            if s.get("periode"):
-                teile.append(_periode(s["periode"]))
-            teile += [f"{_n(s.get('bestellungen'))} Bestellungen", f"Netto {_eur(s.get('umsatzNetto'))}"]
-            if s.get("bestellungenOhneNetto"):
-                teile.append(f"{_n(s['bestellungenOhneNetto'])} Bestellungen ohne Netto")
-            print("  " + " · ".join(teile) + (f" · {s['link']}" if s.get("link") and len(shops) <= WENIGE else ""))
         produkte = sh.get("produkte") or []
+        if suche:
+            # Die Summen je Shop filtert das Tool nicht nach der Suche; die Produktzeilen schon (gleiche Regel wie
+            # hier: SKU oder Name enthält den Text). Hier noch einmal gefiltert, damit nie eine fremde Zeile durchrutscht.
+            s_klein = suche.strip().lower()
+            produkte = [p for p in produkte if s_klein in (p.get("sku") or "").lower() or s_klein in (p.get("produkt") or "").lower()]
         if produkte:
             print("Shops je Produkt:")
             for p in produkte:
@@ -926,6 +922,22 @@ def cmd_absatz(args: list[str]) -> None:
                 if p.get("positionenOhneStueck"):
                     teile.append(f"{_n(p['positionenOhneStueck'])} Positionen ohne Stückzahl")
                 print("  " + " · ".join(t for t in teile if t))
+        elif suche:
+            print(f"Shops: kein Verkauf zu „{suche}“.")
+        if suche:
+            kopf = "Shops gesamt (nicht nach Suche gefiltert):"
+        else:
+            kopf = "Shops:" if shops else "Shops: keine"
+        if shops or not suche:
+            print(kopf)
+        for s in shops:
+            teile = [s.get("shop") or "?"]
+            if s.get("periode"):
+                teile.append(_periode(s["periode"]))
+            teile += [f"{_n(s.get('bestellungen'))} Bestellungen", f"Netto {_eur(s.get('umsatzNetto'))}"]
+            if s.get("bestellungenOhneNetto"):
+                teile.append(f"{_n(s['bestellungenOhneNetto'])} Bestellungen ohne Netto")
+            print("  " + " · ".join(teile) + (f" · {s['link']}" if s.get("link") and len(shops) <= WENIGE else ""))
         if sh.get("hinweis"):
             print(f"Hinweis Shops: {sh['hinweis']}")
     if zu_hoch:
