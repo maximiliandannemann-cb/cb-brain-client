@@ -18,6 +18,17 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|erledigt|a
           cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--notiz <text>] [--faellig YYYY-MM-DD | --faellig-weg]
                                             [--prio 1-4] [--fuer <name> | --fuer-weg]
           Prio: 1 niedrig, 2 mittel, 3 hoch, 4 dringend. Löschen geht nur im Tool.
+
+Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>]
+          cbtool.py bestellung PO-049                    (wörtlich oder eindeutiger Anfang)
+          cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>]
+          cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
+          cbtool.py bestand [--suche <sku|name>] [--limit <n>]
+          cbtool.py bestellplanung [--status faellig|ueberfaellig|alle|vorschlag|angepasst|bestaetigt]
+                                   [--suche <text>] [--marktplatz DE|US|alle] [--limit <n>]
+          cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
+                           [--kanal amazon|shop|alle] [--je produkt|tag|woche]
+          Nur lesen. Limit 1-200 (Standard 50, bestand 200). Bis drei Treffer: mit Einzelheiten und Link.
 """
 # macOS bringt ab Werk nur Python 3.9 mit, und `python3` zeigt ohne Homebrew darauf (Issue #1, 18.09.).
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
@@ -85,6 +96,11 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
             payload = json.loads(e.read().decode("utf-8"))
             msg = payload.get("error", "")
             namen = payload.get("namen") or []
+            treffer = payload.get("treffer") or []  # mehrdeutige Bestellnummer (Lesezugang)
+            if len(treffer) > 10:
+                namen = treffer[:10] + [f"und {len(treffer) - 10} weitere; die Nummer genauer angeben"]
+            elif treffer:
+                namen = treffer
             # Der Server nennt bei einem Teilfehler die schon geschriebenen Pfade; sie gehören
             # in die Meldung, sonst wirft der Nutzer alles erneut ein (Astra-Review 18.09.2026).
             for p in payload.get("paths", []):
@@ -266,10 +282,15 @@ def _nr(wert: str) -> str:
     return urllib.parse.quote(w.upper())
 
 
+HILFE = "Aufgaben:"  # Abschnitt der Hilfe bei Bedienfehlern; die Ware-Befehle setzen "Ware:"
+
+
 def _falsch(text: str) -> None:
-    """Bedienfehler: Meldung plus Hilfe auf stderr, Exit 2."""
+    """Bedienfehler: Meldung plus Hilfe des Abschnitts (bis zur nächsten Leerzeile) auf stderr, Exit 2."""
     print(text, file=sys.stderr)
-    print("\n" + __doc__[__doc__.index("Aufgaben:"):].rstrip(), file=sys.stderr)
+    start = __doc__.index(HILFE)
+    ende = __doc__.find("\n\n", start)
+    print("\n" + __doc__[start:ende if ende != -1 else None].rstrip(), file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -439,7 +460,493 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
     print(_zeile(a))
 
 
+# ---------------------------------------------------------------- Ware: Lesezugang Supply Chain + Absatz (14.10.2026)
+# Nur lesen. Nummern, SKUs und Amazon-Shipment-IDs kommen unverändert aus der Antwort des Tools.
+
+LESEN = "/api/brain-read"
+TIMEOUT_LESEN = 30.0  # Bestand und Absatz laden seitenweise; 8 s reichen dafür nicht sicher
+WENIGE = 3  # bis zu so vielen Treffern zeigt eine Liste Einzelheiten und Link
+
+
+def _n(x) -> str:
+    """1234 → 1.234; None → –."""
+    if x is None:
+        return "–"
+    if isinstance(x, float) and not x.is_integer():
+        return _dez(x)
+    return f"{int(x):,}".replace(",", ".")
+
+
+def _dez(x: float, stellen: int = 2) -> str:
+    """88987.06 → 88.987,06"""
+    return f"{x:,.{stellen}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def _eur(x) -> str:
+    return "–" if x is None else _dez(float(x)) + " €"
+
+
+def _heute_jahr() -> int:
+    return (datetime.now(BERLIN) if BERLIN else datetime.now()).year
+
+
+def _datum_text(wert: str | None, voll: bool = False) -> str | None:
+    """`2026-10-28` → `28.10.` (dieses Jahr) bzw. `23.02.2027`; mit voll immer mit Jahr."""
+    t = _tag(wert, jahr=True)
+    if not t or not re.match(r"^\d{2}\.\d{2}\.\d{4}$", t):
+        return t
+    return t if voll or int(t[-4:]) != _heute_jahr() else t[:6]
+
+
+def _zeitpunkt(wert: str | None) -> str | None:
+    """ISO-Zeitpunkt → `14.10.2026 07:30` (Europe/Berlin); reiner Tag → `14.10.2026`."""
+    if not wert:
+        return None
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$", wert.strip())
+    if not m:
+        return _datum_text(wert, voll=True)
+    tz = m.group(7) or "Z"
+    off = 0 if tz == "Z" else (1 if tz[0] == "+" else -1) * (int(tz[1:3]) * 60 + int(tz[-2:]))
+    try:
+        t = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5)), int(m.group(6) or 0), tzinfo=timezone(timedelta(minutes=off)))
+    except ValueError:
+        return wert
+    if BERLIN:
+        t = t.astimezone(BERLIN)
+    return t.strftime("%d.%m.%Y %H:%M")
+
+
+STAND_TEXT = {
+    "amazonBestandTag": ("Amazon-Bestand vom", _datum_text),
+    "amazonBisTag": ("Amazon-Verkäufe bis", _datum_text),
+    "amazonSync": ("Amazon-Abgleich", _zeitpunkt),
+    "shopsBisTag": ("Shops bis", _datum_text),
+    "letzterLauf": ("letzter Planungslauf", _zeitpunkt),
+    "lager": ("Lager", str),
+}
+
+
+def _stand(res: dict) -> None:
+    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind."""
+    st = res.get("stand") or {}
+    teile = [f"abgerufen {_zeitpunkt(st.get('abgerufen')) or '?'}"]
+    if st.get("daten"):
+        teile.append(f"Daten {st['daten']}")
+    for k, v in st.items():
+        if k in ("abgerufen", "daten"):
+            continue
+        label, fmt = STAND_TEXT.get(k, (k, str))
+        teile.append(f"{label} {fmt(v) if v else 'unbekannt'}")
+    print("Stand: " + ", ".join(teile))
+
+
+def _kopf(titel: str, res: dict, liste: list) -> None:
+    anzahl = res.get("anzahl", len(liste))
+    print(f"{titel} ({anzahl}" + (f", gezeigt {len(liste)}" if res.get("gekuerzt") else "") + "):")
+
+
+def _gekuerzt(res: dict, liste: list) -> None:
+    if res.get("gekuerzt"):
+        print(f"Gekürzt: {len(liste)} von {res.get('anzahl')} gezeigt; mit --suche eingrenzen oder --limit bis 200 erhöhen.")
+
+
+def _ware_get(pfad: str, q: dict | None = None) -> dict:
+    q = {k: v for k, v in (q or {}).items() if v is not None}
+    return call(LESEN + pfad + ("?" + urllib.parse.urlencode(q) if q else ""), method="GET", timeout=TIMEOUT_LESEN, plain_errors=True)
+
+
+def _wahl(wert: str | None, name: str, erlaubt: tuple) -> str | None:
+    """Fester Wertebereich, Groß/klein egal; Rückgabe in der Schreibweise der Liste."""
+    if wert is None:
+        return None
+    for e in erlaubt:
+        if e.lower() == wert.strip().lower():
+            return e
+    _falsch(f"{name} erwartet {', '.join(erlaubt[:-1])} oder {erlaubt[-1]}, nicht „{wert}“.")
+
+
+def _tag_param(wert: str | None, name: str) -> str | None:
+    if wert is None:
+        return None
+    try:
+        datetime.strptime(wert, "%Y-%m-%d")
+    except ValueError:
+        _falsch(f"{name} erwartet ein Datum als YYYY-MM-DD, nicht „{wert}“.")
+    return wert
+
+
+def _ref(args: list[str], was: str, beispiel: str) -> str:
+    if len(args) != 1:
+        _falsch(f"{was} braucht genau eine Nummer, z. B. {beispiel}." + (f" Unbekannt: {' '.join(args[1:])}" if len(args) > 1 else ""))
+    nr = args[0].strip()
+    if not re.match(r"^[A-Za-z0-9._-]+$", nr):
+        _falsch(f"„{args[0]}“ ist keine gültige Nummer (erlaubt Buchstaben, Ziffern, Punkt, Binde- und Unterstrich).")
+    return urllib.parse.quote(nr)
+
+
+def _gruppen(liste: list, zeile) -> None:
+    """Eine Zeile je Objekt, mit Zwischenkopf, wenn die Gruppe des Tools wechselt."""
+    gruppe = object()
+    for x in liste:
+        if x.get("gruppe") != gruppe:
+            gruppe = x.get("gruppe")
+            if gruppe:
+                print(f"{gruppe}:")
+        print("  " + zeile(x))
+
+
+def _felder(paare) -> None:
+    for label, wert in paare:
+        if wert not in (None, "", []):
+            print(f"{label}: {wert}")
+
+
+# ---- Bestellungen
+
+def _po_zeile(b: dict) -> str:
+    teile = [b.get("po") or "?", b.get("status") or "?"]
+    produkt = b.get("produkt") or ""
+    if b.get("weitereProdukte"):
+        produkt += f" (+{b['weitereProdukte']} weitere)"
+    teile.append(produkt)
+    weg = " › ".join(x for x in (b.get("lieferant"), b.get("veredler"), b.get("ziel")) if x)
+    if weg:
+        teile.append(weg)
+    m = b.get("menge") or {}
+    if b.get("eingegangenAm") and not m.get("offen"):
+        teile.append(f"eingegangen {_datum_text(b['eingegangenAm'])}")
+    else:
+        eta = b.get("etaBestaetigt") or b.get("etaZugesagt")
+        teile.append(f"ETA {_datum_text(eta)}" + (" (bestätigt)" if b.get("etaBestaetigt") else " (zugesagt)") if eta else "ohne ETA")
+        if b.get("eingegangenAm"):  # Teillieferung: Rest offen
+            teile.append(f"eingegangen am {_datum_text(b['eingegangenAm'])}")
+    teile.append(f"offen {_n(m.get('offen'))} von {_n(m.get('gesamt'))} St.")
+    if b.get("naechsterSchritt"):
+        teile.append(f"nächster Schritt: {b['naechsterSchritt']}")
+    return " · ".join(teile)
+
+
+def _po_einzeln(b: dict) -> None:
+    m = b.get("menge") or {}
+    _felder((
+        ("Produkte", ", ".join(b.get("skus") or [])),
+        ("Lieferant", b.get("lieferant")),
+        ("Veredler", b.get("veredler")),
+        ("Ziel", (b.get("ziel") or "?") + (f" ({b['marktplatz']})" if b.get("marktplatz") else "")),
+        ("Gruppe", b.get("gruppe")),
+        ("Bestellt am", _datum_text(b.get("bestelltAm"), voll=True)),
+        ("ETA zugesagt", _datum_text(b.get("etaZugesagt"), voll=True)),
+        ("ETA bestätigt", _datum_text(b.get("etaBestaetigt"), voll=True)),
+        ("Eingegangen am", _datum_text(b.get("eingegangenAm"), voll=True)),
+        ("Menge", f"{_n(m.get('gesamt'))} gesamt, {_n(m.get('eingegangen'))} eingegangen, {_n(m.get('offen'))} offen"),
+        ("Nächster Schritt", b.get("naechsterSchritt")),
+        ("AB-Nummer", b.get("abNummer")),
+        ("Teil von", b.get("teilVon")),
+        ("Link", b.get("link")),
+    ))
+
+
+def cmd_bestellungen(args: list[str]) -> None:
+    status = _wahl(_wert(args, "--status"), "--status", ("offen", "alle"))
+    suche = _wert(args, "--suche")
+    limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
+    _rest_leer(args)
+    res = _ware_get("/bestellungen", {"status": status, "suche": suche, "limit": limit})
+    liste = res.get("bestellungen") or []
+    art = "Offene Bestellungen" if (status or "offen") == "offen" else "Bestellungen"
+    if not liste:
+        print(f"Keine {'offenen ' if status != 'alle' else ''}Bestellungen" + (f" zu „{suche}“" if suche else "") + ".")
+    else:
+        _kopf(art + (f" zu „{suche}“" if suche else ""), res, liste)
+        _gruppen(liste, _po_zeile)
+        if len(liste) <= WENIGE:
+            for b in liste:
+                print(f"  Link {b.get('po')}: {b.get('link')}")
+        _gekuerzt(res, liste)
+    _stand(res)
+
+
+def cmd_bestellung(args: list[str]) -> None:
+    res = _ware_get("/bestellungen/" + _ref(args, "bestellung", "PO-049"))
+    b = res.get("bestellung") or {}
+    print(f"{b.get('po')} · {b.get('status')} · {b.get('produkt')}")
+    _po_einzeln(b)
+    if b.get("positionen"):
+        print("Positionen:")
+        for p in b["positionen"]:
+            kartons = f" · {_n(p['kartons'])} Kartons" if p.get("kartons") is not None else ""
+            print(f"  {p.get('sku')} · {p.get('produkt')} · bestellt {_n(p.get('bestellt'))} · eingegangen {_n(p.get('eingegangen'))} · offen {_n(p.get('offen'))}{kartons}")
+    if b.get("meilensteine"):
+        print("Meilensteine:")
+        for x in b["meilensteine"]:
+            print(f"  [{'x' if x.get('erledigt') else ' '}] {x.get('schritt')}: {x.get('text')}")
+    if b.get("stationen"):
+        print("Stationen: " + " › ".join(f"{s.get('name')}" + (f" ({s['rolle']})" if s.get("rolle") else "") for s in b["stationen"]))
+    if b.get("etaAenderungen"):
+        print("ETA-Änderungen:")
+        for c in b["etaAenderungen"]:
+            print(f"  {_zeitpunkt(c.get('am'))}: {_datum_text(c.get('alt'), voll=True) or '–'} › {_datum_text(c.get('neu'), voll=True) or '–'}" + (f" ({c['von']})" if c.get("von") else ""))
+    else:
+        print("ETA-Änderungen: keine")
+    _stand(res)
+
+
+# ---- Sendungen
+
+def _sendung_zeile(s: dict) -> str:
+    teile = [s.get("nr") or "?", s.get("amazonId") or "ohne Amazon-ID", s.get("status") or "?"]
+    if s.get("von"):
+        teile.append(f"von {s['von']}")
+    teile.append(f"ETA {_datum_text(s['eta'])}" if s.get("eta") else "ohne ETA")
+    menge = f"{_n(s.get('stueck'))} St."
+    if s.get("kartons") is not None:
+        menge += f", {_n(s['kartons'])} Kartons"
+    teile.append(menge)
+    produkt = s.get("produkt") or ""
+    weitere = len(s.get("positionen") or []) - 1
+    if weitere > 0:
+        produkt += f" (+{weitere} weitere)"
+    teile.append(produkt)
+    return " · ".join(teile)
+
+
+def cmd_sendungen(args: list[str]) -> None:
+    status = _wahl(_wert(args, "--status"), "--status", ("offen", "alle"))
+    suche = _wert(args, "--suche")
+    limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
+    _rest_leer(args)
+    res = _ware_get("/sendungen", {"status": status, "suche": suche, "limit": limit})
+    liste = res.get("sendungen") or []
+    art = "Offene Sendungen" if (status or "offen") == "offen" else "Sendungen"
+    if not liste:
+        print(f"Keine {'offenen ' if status != 'alle' else ''}Sendungen" + (f" zu „{suche}“" if suche else "") + ".")
+    else:
+        _kopf(art + (f" zu „{suche}“" if suche else ""), res, liste)
+        _gruppen(liste, _sendung_zeile)
+        if len(liste) <= WENIGE:
+            for s in liste:
+                print(f"  Link {s.get('nr')}: {s.get('link')}")
+        _gekuerzt(res, liste)
+    _stand(res)
+
+
+def cmd_sendung(args: list[str]) -> None:
+    res = _ware_get("/sendungen/" + _ref(args, "sendung", "IN-2026-0039 oder FBA15MM4GTB5"))
+    s = res.get("sendung") or {}
+    print(f"{s.get('nr')} · {s.get('status')}")
+    _felder((
+        ("Amazon-Shipment-ID", s.get("amazonId") or "noch keine"),
+        ("Gruppe", s.get("gruppe")),
+        ("Von", s.get("von")),
+        ("ETA", _datum_text(s.get("eta"), voll=True)),
+        ("Angelegt am", _datum_text(s.get("angelegtAm"), voll=True)),
+        ("Stück", _n(s.get("stueck"))),
+        ("Kartons", _n(s["kartons"]) if s.get("kartons") is not None else "keine Angabe"),
+        ("Link", s.get("link")),
+    ))
+    if s.get("positionen"):
+        print("Positionen:")
+        for p in s["positionen"]:
+            kartons = f" · {_n(p['kartons'])} Kartons" if p.get("kartons") is not None else ""
+            print(f"  {p.get('sku')} · {p.get('produkt')} · {_n(p.get('stueck'))} St.{kartons}")
+    _stand(res)
+
+
+# ---- Bestand
+
+def _bestand_zeile(b: dict) -> str:
+    teile = [b.get("sku") or "?", b.get("name") or "", b.get("marktplatz") or ""]
+    f = b.get("fba")
+    if f:
+        zulauf = (f.get("zulaufWorking") or 0) + (f.get("zulaufShipped") or 0) + (f.get("zulaufReceiving") or 0)
+        teile.append(f"FBA {_n(f.get('verfuegbar'))} verfügbar, {_n(f.get('reserviert'))} reserviert, Amazon-Zulauf {_n(zulauf)} (vom {_datum_text(f.get('datum'))})")
+    else:
+        teile.append("FBA unbekannt")
+    if b.get("lagerGesamt") is None:
+        teile.append("Lager unbekannt")
+    else:
+        orte = ", ".join(f"{l.get('standort')} {_n(l.get('stueck'))}" for l in b.get("lager") or [])
+        teile.append(f"Lager {_n(b['lagerGesamt'])}" + (f" ({orte})" if orte else ""))
+    if b.get("beimHersteller"):
+        teile.append(f"beim Hersteller {_n(b['beimHersteller'])}")
+    teile.append(f"unterwegs {_n((b.get('unterwegs') or {}).get('stueck'))}")
+    return " · ".join(t for t in teile if t)
+
+
+def _bestand_einzeln(b: dict) -> None:
+    f = b.get("fba")
+    if f:
+        print(f"    Amazon-Zulauf: working {_n(f.get('zulaufWorking'))}, shipped {_n(f.get('zulaufShipped'))}, receiving {_n(f.get('zulaufReceiving'))}")
+    elif b.get("fbaHinweis"):
+        print(f"    FBA: {b['fbaHinweis']}")
+    for a in (b.get("unterwegs") or {}).get("anlieferungen") or []:
+        spaet = f" (+{a['ueberfaelligTage']} T überfällig)" if a.get("ueberfaelligTage") else ""
+        print(f"    unterwegs: {a.get('ref')} · {a.get('art')} · {_n(a.get('stueck'))} St. · ETA {_datum_text(a.get('eta')) or '–'}{spaet}")
+    print(f"    Link: {b.get('link')}")
+
+
+def cmd_bestand(args: list[str]) -> None:
+    suche = _wert(args, "--suche")
+    # Ohne Suche sind es über 50 Produkte; die Voreinstellung des Tools (50) schnitte sonst ab.
+    limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200) or 200
+    _rest_leer(args)
+    res = _ware_get("/bestand", {"suche": suche, "limit": limit})
+    liste = res.get("bestand") or []
+    if not liste:
+        print("Kein Bestand" + (f" zu „{suche}“" if suche else "") + ".")
+    else:
+        _kopf("Bestand" + (f" zu „{suche}“" if suche else ""), res, liste)
+        for b in liste:
+            print("  " + _bestand_zeile(b))
+            if len(liste) <= WENIGE:
+                _bestand_einzeln(b)
+        _gekuerzt(res, liste)
+        hinweise = sorted({b.get("hinweis") for b in liste if b.get("hinweis")})
+        for h in hinweise:
+            print(f"Hinweis: {h}")
+    _stand(res)
+
+
+# ---- Bestellplanung
+
+PLAN_STATUS = ("faellig", "ueberfaellig", "alle", "vorschlag", "angepasst", "bestaetigt")
+
+
+def _plan_zeile(z: dict) -> str:
+    teile = [z.get("sku") or "?", z.get("produkt") or ""]
+    if z.get("lieferant"):
+        teile.append(z["lieferant"])
+    teile.append(z.get("marktplatz") or "")
+    teile.append(f"bestellen bis {_datum_text(z.get('bestellenBis'))}" + (" (überfällig)" if z.get("ueberfaellig") else ""))
+    teile.append(f"Ankunft {_datum_text(z.get('ankunft'))}")
+    teile.append(f"{_n(z.get('menge'))} St.")
+    teile.append(z.get("status") or "")
+    weitere = len(z.get("bestellungen") or []) - 1
+    if weitere > 0:
+        teile.append(f"+{weitere} weitere geplant")
+    return " · ".join(t for t in teile if t)
+
+
+def cmd_bestellplanung(args: list[str]) -> None:
+    status = _wahl(_wert(args, "--status"), "--status", PLAN_STATUS)
+    suche = _wert(args, "--suche")
+    markt = _wahl(_wert(args, "--marktplatz"), "--marktplatz", ("DE", "US", "alle"))
+    limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
+    _rest_leer(args)
+    res = _ware_get("/bestellplanung", {"status": status, "suche": suche, "marktplatz": markt, "limit": limit})
+    liste = res.get("bestellplanung") or []
+    rahmen = f"Marktplatz {res.get('marktplatz') or markt or 'alle'}" + (f", Status {status}" if status else "") + (f", zu „{suche}“" if suche else "")
+    if not liste:
+        print(f"Keine geplanten Bestellungen ({rahmen}).")
+    else:
+        _kopf(f"Bestellplanung, {rahmen}", res, liste)
+        for z in liste:
+            print("  " + _plan_zeile(z))
+            if len(liste) <= WENIGE:
+                for o in (z.get("bestellungen") or [])[1:]:
+                    print(f"    danach: bestellen bis {_datum_text(o.get('bestellenBis'))} · Ankunft {_datum_text(o.get('ankunft'))} · {_n(o.get('menge'))} St. · {o.get('status')}")
+        _gekuerzt(res, liste)
+        print(f"Link: {liste[0].get('link')}")
+    _stand(res)
+
+
+# ---- Absatz
+
+def _conv(z: dict) -> str:
+    """Conversion wie das Tool; markiert, wenn Tage ohne Sitzungen mitzählen (Historie vor 11.07.2026)."""
+    if z.get("conversionPct") is None:
+        return "Conversion –"
+    text = f"Conversion {_dez(z['conversionPct'])} %"
+    if (z.get("sitzungsTage") or 0) < (z.get("datentage") or 0):
+        text += f" (zu hoch: nur {_n(z.get('sitzungsTage'))} von {_n(z.get('datentage'))} Tagen mit Sitzungen)"
+    return text
+
+
+def _umsatz(z: dict) -> str:
+    if z.get("umsatz") is None:
+        return "Umsatz unbekannt"
+    text = _eur(z["umsatz"])
+    if (z.get("umsatzTage") or 0) < (z.get("datentage") or 0):
+        text += f" (nur {_n(z.get('umsatzTage'))} von {_n(z.get('datentage'))} Tagen mit Umsatz)"
+    return text
+
+
+def _periode(p: str | None) -> str:
+    return _datum_text(p) if p and re.match(r"^\d{4}-\d{2}-\d{2}$", p) else (p or "?")
+
+
+def _amazon_zahlen(z: dict) -> str:
+    return " · ".join((f"{_n(z.get('stueck'))} St.", _umsatz(z), f"{_n(z.get('sitzungen'))} Sitzungen", _conv(z)))
+
+
+def cmd_absatz(args: list[str]) -> None:
+    suche = _wert(args, "--suche")
+    von = _tag_param(_wert(args, "--von"), "--von")
+    bis = _tag_param(_wert(args, "--bis"), "--bis")
+    kanal = _wahl(_wert(args, "--kanal"), "--kanal", ("amazon", "shop", "alle"))
+    je = _wahl(_wert(args, "--je"), "--je", ("produkt", "tag", "woche"))
+    _rest_leer(args)
+    res = _ware_get("/absatz", {"suche": suche, "von": von, "bis": bis, "kanal": kanal, "je": je})
+    zr = res.get("zeitraum") or {}
+    print(f"Absatz {_datum_text(zr.get('von'), voll=True)} bis {_datum_text(zr.get('bis'), voll=True)}, je {res.get('je')}, Kanal {res.get('kanal')}" + (f", zu „{suche}“" if suche else "") + ":")
+    zu_hoch = False
+    a = res.get("amazon")
+    if a is not None:
+        zeilen = a.get("zeilen") or []
+        g = a.get("gesamt") or {}
+        print(f"Amazon gesamt ({_n(a.get('skus'))} SKU{'' if a.get('skus') == 1 else 's'}): {_amazon_zahlen(g)}")
+        zu_hoch = (g.get("sitzungsTage") or 0) < (g.get("datentage") or 0)
+        for z in zeilen:
+            kopf = f"{z.get('sku')} · {z.get('produkt')}" if z.get("sku") else _periode(z.get("periode"))
+            print(f"  {kopf} · {_amazon_zahlen(z)}")
+            if z.get("link") and len(zeilen) <= WENIGE:
+                print(f"    Link: {z['link']}")
+        if not zeilen:
+            print("  keine Amazon-Verkäufe im Zeitraum")
+    sh = res.get("shops")
+    if sh is not None:
+        shops = sh.get("shops") or []
+        print("Shops:" if shops else "Shops: keine")
+        for s in shops:
+            teile = [s.get("shop") or "?"]
+            if s.get("periode"):
+                teile.append(_periode(s["periode"]))
+            teile += [f"{_n(s.get('bestellungen'))} Bestellungen", f"Netto {_eur(s.get('umsatzNetto'))}"]
+            if s.get("bestellungenOhneNetto"):
+                teile.append(f"{_n(s['bestellungenOhneNetto'])} Bestellungen ohne Netto")
+            print("  " + " · ".join(teile) + (f" · {s['link']}" if s.get("link") and len(shops) <= WENIGE else ""))
+        produkte = sh.get("produkte") or []
+        if produkte:
+            print("Shops je Produkt:")
+            for p in produkte:
+                teile = [p.get("shop") or "?"]
+                if p.get("periode"):
+                    teile.append(_periode(p["periode"]))
+                teile += [p.get("sku") or "ohne SKU", p.get("produkt") or "", f"{_n(p.get('stueck'))} St.", f"{_n(p.get('bestellungen'))} Bestellungen"]
+                if p.get("positionenOhneStueck"):
+                    teile.append(f"{_n(p['positionenOhneStueck'])} Positionen ohne Stückzahl")
+                print("  " + " · ".join(t for t in teile if t))
+        if sh.get("hinweis"):
+            print(f"Hinweis Shops: {sh['hinweis']}")
+    if zu_hoch:
+        print("Hinweis Conversion: Für Tage vor dem 11.07.2026 (alte Flieber-Historie) fehlen die Sitzungen. Werte mit „zu hoch“ "
+              "zählen Stück ohne Sitzungen mit und können über 100 % liegen; nicht als echte Conversion lesen.")
+    _stand(res)
+
+
+WARE = {
+    "bestellungen": cmd_bestellungen,
+    "bestellung": cmd_bestellung,
+    "sendungen": cmd_sendungen,
+    "sendung": cmd_sendung,
+    "bestand": cmd_bestand,
+    "bestellplanung": cmd_bestellplanung,
+    "absatz": cmd_absatz,
+}
+
+
 def main(argv: list[str]) -> None:
+    global HILFE
     if len(argv) < 2:
         print(__doc__)
         return
@@ -470,6 +977,9 @@ def main(argv: list[str]) -> None:
         cmd_aufgabe_neu(args)
     elif cmd == "aufgabe-aendern":
         cmd_aufgabe_aendern(args)
+    elif cmd in WARE:
+        HILFE = "Ware:"
+        WARE[cmd](args)
     else:
         print(__doc__)
         raise SystemExit(2)
