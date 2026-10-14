@@ -19,6 +19,10 @@ Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `pyt
 
 Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
 
+## Aufgaben (ab v0.2.0)
+
+`/aufgaben` zeigt die eigenen Aufgaben aus dem Tool und arbeitet sie ab: „was steht an“, „CB-123“, „ist erledigt“, „verschieb auf Freitag“, „leg an: …“. Jede Änderung läuft unter dem Namen, dem der Schlüssel gehört. Neue Aufgaben entstehen nur auf ausdrückliche Anweisung, Löschen geht nur im Tool. Derselbe Schlüssel wie fürs Wiki, keine weitere Einrichtung.
+
 ## Wenn der Wiki-Kontext fehlt
 
 Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was er gefunden hat, steht in `~/.cb-brain/logs/hook.log`, sobald er das Skript nicht laden kann.
@@ -26,8 +30,8 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 ## Was liegt wo
 
 - `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 2,5 s.
-- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
-- `skills/*`: die vier Befehle.
+- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
+- `skills/*`: die fünf Befehle.
 - `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt.
 
 Keine Geheimnisse im Repo. Der Schlüssel entsteht im Tool und liegt nur bei der Person.
