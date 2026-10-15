@@ -16,7 +16,9 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|erledigt|a
           cbtool.py aufgabe CB-123
           cbtool.py aufgabe-neu --titel <text> [--beschreibung <text>] [--fuer <name>] [--faellig YYYY-MM-DD] [--prio 1-4]
           cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--notiz <text>] [--faellig YYYY-MM-DD | --faellig-weg]
-                                            [--prio 1-4] [--fuer <name> | --fuer-weg]
+                                            [--grund <text>] [--prio 1-4] [--fuer <name> | --fuer-weg]
+          --grund: ein Satz (1-300 Zeichen), warum sich eine bestehende Frist ändert; nur mit --faellig
+          oder --faellig-weg. Ab 19.10.2026 Pflicht, sobald die Aufgabe schon eine Frist hatte.
           Prio: 1 niedrig, 2 mittel, 3 hoch, 4 dringend. Löschen geht nur im Tool.
 
 Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>]
@@ -332,6 +334,25 @@ def _datum(wert: str | None) -> str | None:
     return wert
 
 
+GRUND_MAX = 300  # wie im Tool (src/lib/aufgaben-api.ts, GRUND_MAX)
+
+
+def _grund(wert: str | None) -> str | None:
+    """Grund einer Friständerung wie im Tool normalisiert: Zeilenumbrüche zu Leerzeichen, außen getrimmt.
+    Gezählt wird wie in JavaScript (UTF-16-Einheiten), damit lokal und im Tool dieselbe Grenze gilt."""
+    if wert is None:
+        return None
+    g = re.sub(r"\s*[\r\n]+\s*", " ", wert).strip()
+    if not g:
+        _falsch("--grund ist leer.")
+    if len(g.encode("utf-16-le")) // 2 > GRUND_MAX:
+        _falsch(f"--grund darf höchstens {GRUND_MAX} Zeichen lang sein.")
+    return g
+
+
+GRUND_FEHLT = "Bitte kurz begründen, warum die Frist sich ändert."  # Text des Tools (400) ab 19.10.2026
+
+
 def _rest_leer(args: list[str]) -> None:
     if args:
         _falsch(f"Unbekannt: {' '.join(args)}")
@@ -420,6 +441,7 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
     faellig_weg, fuer_weg = _schalter(args, "--faellig-weg"), _schalter(args, "--fuer-weg")
     notiz = _wert(args, "--notiz")
     faellig = _datum(_wert(args, "--faellig"))
+    grund = _grund(_wert(args, "--grund"))
     prio = _zahl(_wert(args, "--prio"), "--prio", 1, 4)
     fuer = _wert(args, "--fuer")
     if len(args) != 1:
@@ -429,6 +451,8 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         _falsch("--erledigt und --offen schließen sich aus.")
     if faellig and faellig_weg:
         _falsch("--faellig und --faellig-weg schließen sich aus.")
+    if grund is not None and not (faellig or faellig_weg):
+        _falsch("--grund geht nur zusammen mit --faellig oder --faellig-weg.")
     if fuer and fuer_weg:
         _falsch("--fuer und --fuer-weg schließen sich aus.")
     body = {}
@@ -440,13 +464,22 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         body["notiz"] = notiz
     if faellig or faellig_weg:
         body["faellig"] = faellig
+    # Nur mitschicken, wenn gesetzt: das Tool vor dem 19.10.2026 lehnt unbekannte Felder mit 400 ab.
+    if grund is not None:
+        body["grund"] = grund
     if prio is not None:
         body["prio"] = prio
     if fuer or fuer_weg:
         body["fuer"] = fuer
     if not body:
         _falsch("Nichts zu ändern.")
-    res = call(f"{AUFGABEN}/{nr}", body, method="PATCH", plain_errors=True)
+    try:
+        res = call(f"{AUFGABEN}/{nr}", body, method="PATCH", plain_errors=True)
+    except SystemExit as e:
+        if GRUND_FEHLT in str(e.code):
+            raise SystemExit(f"Nicht geändert: {GRUND_FEHLT}\n{nr} hat schon eine Frist. "
+                             f"Die Person nach einem Satz Grund fragen und erneut mit --grund \"<grund>\" aufrufen.")
+        raise
     a = res.get("aufgabe") or {}
     texte = {
         "erledigt": "erledigt" if a.get("erledigtAm") else "wieder offen",

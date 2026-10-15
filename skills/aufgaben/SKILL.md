@@ -20,7 +20,17 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Jede 
 
 ## Ändern, nur auf Wort der Person
 
-`aufgabe-aendern CB-123` mit `--erledigt` oder `--offen`, `--faellig YYYY-MM-DD` oder `--faellig-weg`, `--prio 1-4` (niedrig, mittel, hoch, dringend), `--fuer <Name>` oder `--fuer-weg`. Nur ändern, was die Person sagt. Relative Daten („Freitag“, „nächste Woche“) vom heutigen Datum aus in YYYY-MM-DD umrechnen und das Datum im Satz nennen („verschoben auf Fr 16.10.“). Die Ausgabe in einem Satz wiedergeben.
+`aufgabe-aendern CB-123` mit `--erledigt` oder `--offen`, `--faellig YYYY-MM-DD` oder `--faellig-weg` (bei bestehender Frist mit `--grund`, siehe unten), `--prio 1-4` (niedrig, mittel, hoch, dringend), `--fuer <Name>` oder `--fuer-weg`. Nur ändern, was die Person sagt. Relative Daten („Freitag“, „nächste Woche“) vom heutigen Datum aus in YYYY-MM-DD umrechnen und das Datum im Satz nennen („verschoben auf Fr 16.10.“). Die Ausgabe in einem Satz wiedergeben.
+
+### Frist verschieben oder entfernen: nur mit Grund der Person
+
+Hat die Aufgabe schon eine Frist (`aufgabe CB-123` zeigt „Fällig“) und soll sie sich ändern oder wegfallen, braucht das Tool einen Satz Grund (Pflicht ab 19.10.2026).
+
+1. Vor dem Aufruf die Person fragen: „Warum verschiebt sich CB-123? Ein Satz reicht.“ Hat sie den Grund in der Sitzung schon selbst genannt („verschieb auf Freitag, der Lieferant ist krank“), gilt dieser.
+2. Den Grund wörtlich übergeben: `aufgabe-aendern CB-123 --faellig YYYY-MM-DD --grund "<Satz der Person>"` (oder `--faellig-weg --grund "…"`). Höchstens 300 Zeichen.
+3. Den Grund nie selbst formulieren, umschreiben, ergänzen oder aus dem Zusammenhang erraten. Ohne Grund der Person wird nicht verschoben.
+
+Erstes Setzen einer Frist (die Aufgabe hatte keine) braucht keinen Grund. Antwortet das Tool „Bitte kurz begründen, warum die Frist sich ändert.“, die Person nach dem Grund fragen und den Aufruf mit `--grund` wiederholen.
 
 ## Anlegen, nur auf ausdrückliche Anweisung
 
