@@ -1,7 +1,7 @@
 {
   "name": "cb-brain-client",
   "description": "CleverBrands Wiki in Claude Code: jede Frage bekommt Wiki-Kontext, /drop wirft Wissen in die Inbox, /wiki fragt das Wiki, /aufgaben arbeitet die eigenen Aufgaben aus dem Tool ab, /ware liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "author": { "name": "CleverBrands" },
   "keywords": ["cleverbrands", "wiki", "company-brain", "aufgaben", "supply-chain"]
 }

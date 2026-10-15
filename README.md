@@ -33,7 +33,8 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 4 s.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 4 s; startet einmal am Tag das Selbst-Update.
+- `scripts/selbst-update.py`: Selbst-Update über die `claude`-CLI, läuft losgelöst im Hintergrund.
 - `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
 - `skills/*`: die sechs Befehle.
 - `CHANGELOG.md`: was sich je Version geändert hat.
@@ -41,6 +42,11 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Neue Version ausliefern
 
-Claude Code holt eine Änderung nur, wenn die Versionsnummer steigt; bei gleicher Nummer meldet `plugin update` „already at the latest version“. Deshalb bei jeder Änderung `version` in `.claude-plugin/plugin.json` und `.claude-plugin/marketplace.json` gleich hochzählen und einen Eintrag in `CHANGELOG.md` schreiben. Wer über „Claude Code verbinden“ im Tool eingerichtet hat (ab 15.10.2026), hat Auto-Update an und bekommt die neue Version beim nächsten Start von Claude Code; ältere Einrichtungen wiederholen das Verbinden einmal oder rufen `claude plugin update cb-brain-client@cleverbrands` auf.
+Das Plugin aktualisiert sich selbst (ab v0.3.1): Der Kontext-Hook startet höchstens einmal am Tag im Hintergrund `scripts/selbst-update.py`, das den Marketplace `cleverbrands` neu holt und `claude plugin update cb-brain-client@cleverbrands` aufruft. Nach einem Update sagt Claude es beim nächsten Prompt einmal an; aktiv ist die neue Version ab dem nächsten Start von Claude Code oder nach `/reload-plugins`. Das ist nötig, weil Claude Code den Marketplace trotz Auto-Update nicht zuverlässig neu holt.
+
+Eine Änderung kommt nur an, wenn die Versionsnummer steigt; bei gleicher Nummer meldet `plugin update` „already at the latest version“. Deshalb bei jeder Änderung `version` in `.claude-plugin/plugin.json` und `.claude-plugin/marketplace.json` gleich hochzählen und einen Eintrag in `CHANGELOG.md` schreiben. Wer noch eine Version vor 0.3.1 hat, ruft einmal `claude plugin marketplace update cleverbrands && claude plugin update cb-brain-client@cleverbrands` auf; danach läuft es von selbst.
+
+- Abschalten: Umgebungsvariable `CB_NO_AUTOUPDATE=1`.
+- Log: `~/.cb-brain/logs/update.log`, eine Zeile je Lauf (Zeit, Version vorher und nachher, Ergebnis). Wann zuletzt geprüft wurde, steht in `~/.cb-brain/update-check`; Löschen der Datei erzwingt die Prüfung beim nächsten Prompt.
 
 Keine Geheimnisse im Repo. Der Schlüssel entsteht im Tool und liegt nur bei der Person.
