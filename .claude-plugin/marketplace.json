@@ -8,7 +8,7 @@
       "name": "cb-brain-client",
       "source": "./",
       "description": "CleverBrands Wiki in Claude Code: Kontext-Hook, /drop, /wiki, /wiki-setup, /wiki-extract, /aufgaben, /ware.",
-      "version": "0.3.1"
+      "version": "0.3.2"
     }
   ],
   "description": "Plugins von CleverBrands für Claude Code."
