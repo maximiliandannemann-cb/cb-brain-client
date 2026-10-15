@@ -6,7 +6,7 @@ Außerdem: einmal je 24 h losgelöst scripts/selbst-update.py starten und nach e
 einen <cb-plugin>-Hinweis ausgeben."""
 from __future__ import annotations
 
-import json, os, re, subprocess, sys, time, urllib.request
+import hashlib, json, os, re, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CB_HOME = os.path.expanduser("~/.cb-brain")
@@ -89,7 +89,7 @@ def begruessung() -> str:
             key = fh.read().strip()
         if not key:
             return ""
-        marke = __import__("hashlib").sha256(key.encode()).hexdigest()[:16]
+        marke = hashlib.sha256(key.encode()).hexdigest()[:16]
         try:
             with open(BEGRUESST, encoding="utf-8") as fh:
                 if fh.read().strip() == marke:
@@ -98,10 +98,10 @@ def begruessung() -> str:
             pass
         with open(BEGRUESST, "w", encoding="utf-8") as fh:
             fh.write(marke + "\n")
-        return ("<cb-plugin>Das CleverBrands-Plugin ist frisch verbunden. Sag dem Nutzer einmal kurz und in eigenen Worten, "
+        return ("<cb-plugin>Das CleverBrands-Plugin ist verbunden. Sag dem Nutzer einmal kurz und in eigenen Worten, "
                 "was jetzt geht: Fragen zur Firma bekommen automatisch Treffer aus dem Firmen-Wiki, /wiki fragt gezielt nach, "
                 "/aufgaben zeigt und pflegt die eigenen Aufgaben, /ware liest Bestellungen, Sendungen, Bestand und Absatz, "
-                "/drop wirft Wissen ins Wiki. Empfiehl einmal /wiki-setup, damit der Wiki-Abschnitt in seine CLAUDE.md kommt.</cb-plugin>")
+                "/drop wirft Wissen ins Wiki. Empfiehl /wiki-setup nur, falls der Abschnitt „CleverBrands-Wiki“ in seiner CLAUDE.md noch fehlt; nicht selbst ausführen.</cb-plugin>")
     except Exception:
         return ""
 
@@ -110,7 +110,7 @@ def main() -> None:
     # Update-Prüfung und Hinweis vor allen frühen Rücksprüngen und vor dem Laden von cbtool:
     # sie laufen auch bei kurzen Prompts, Slash-Befehlen und wenn cbtool.py kaputt ist.
     selbst_update()
-    for hinweis in (begruessung(), update_hinweis()):
+    for hinweis in (update_hinweis(), begruessung()):
         if hinweis:
             print(hinweis)
     try:
