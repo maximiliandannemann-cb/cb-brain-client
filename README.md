@@ -25,7 +25,7 @@ Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract`
 
 ## Offene Punkte (ab v0.4.0)
 
-`/offen` sammelt am Ende einer Sitzung, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), prüft mit `aufgaben --suche` auf Dubletten und zeigt eine kurze Liste mit Titel, Person und Frist. Angelegt wird erst nach ausdrücklichem Ja; zu einer schon offenen Aufgabe schlägt es eine Notiz vor. Verabschiedet sich jemand („danke, das wars“, „Feierabend“), erinnert der Kontext-Hook Claude einmal je Sitzung daran; Stempel `~/.cb-brain/offen-angeboten` (Sitzungs-ID).
+`/offen` sammelt am Ende einer Sitzung, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), prüft mit `aufgaben --suche` auf Dubletten und zeigt eine kurze Liste mit Titel, Person und Frist. Angelegt wird erst nach ausdrücklichem Ja; zu einer schon offenen Aufgabe schlägt es eine Notiz vor. Besteht ein Prompt nur aus einem Abschied („danke, das wars“, „Feierabend!“), erinnert der Kontext-Hook Claude einmal je Sitzung daran; ein Abschiedswort in einer Arbeitsanweisung („Schick das bis morgen an Mats“) zählt nicht. Stempel `~/.cb-brain/offen-angeboten`: eine Zeile je Sitzungs-ID mit Zeitpunkt, Einträge älter als sieben Tage fallen weg. Prüfskript: `/usr/bin/python3 tests/pruefe-offen.py`.
 
 ## Ware (ab v0.3.0)
 

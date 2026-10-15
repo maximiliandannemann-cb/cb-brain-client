@@ -3,7 +3,9 @@
 ## 0.4.0 (15.10.2026)
 
 - Neu: `/offen`. Am Ende einer Sitzung schlägt Claude vor, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), als Aufgaben ins Tool zu legen: kurze Liste mit Titel („Produkt: Tätigkeit“), Person und Frist, Dublettenprüfung mit `aufgaben --suche`, bei vorhandener Aufgabe eine Notiz statt Neuanlage. Angelegt wird nur nach ausdrücklichem Ja, ohne Frist nichts. Grund: Zusagen aus Claude-Sitzungen sollen im Tool landen, auch wenn niemand sie von Hand anlegt.
-- Kontext-Hook: Verabschiedet sich die Person in einem kurzen Prompt („danke, das wars“, „fertig für heute“, „Feierabend“, „tschüss“), erinnert er Claude einmal je Sitzung an `/offen`. Claude bietet nur an, wenn wirklich etwas offen ist, und nach einem Nein nicht wieder. Stempel `~/.cb-brain/offen-angeboten` mit der Sitzungs-ID. Ohne Schlüssel kein Hinweis.
+- Kontext-Hook: Besteht ein Prompt (höchstens 80 Zeichen) nur aus einem Abschied („danke, das wars“, „ok, fertig für heute“, „Feierabend!“, „tschüss“), erinnert er Claude einmal je Sitzung an `/offen`. Abschiedswörter in Arbeitsanweisungen („Schick das bis morgen an Mats“) lösen nichts aus. Claude bietet nur an, wenn wirklich etwas offen ist, und nach einem Nein nicht wieder. Stempel `~/.cb-brain/offen-angeboten`: Sitzungs-IDs mit Zeitpunkt, sieben Tage, parallele Sitzungen stören sich nicht. Ohne Schlüssel oder Sitzungs-ID kein Hinweis.
+- `/offen` schlägt Aufgaben nur für die Person selbst vor; Warten auf andere wird eine eigene Nachfass-Aufgabe. Fristen nur, wenn die Person sie genannt hat, sonst fragt Claude.
+- Prüfskript `tests/pruefe-offen.py` (ohne Framework, ohne Netz): Abschiede, Fehlauslöser, Stempel.
 - `/aufgaben` nennt `/offen` als einzige Ausnahme von „nie von sich aus vorschlagen“; CLAUDE-Abschnitt, Begrüßung und README nennen `/offen`. Bestehende CLAUDE.md-Abschnitte ergänzt `/wiki-setup` nicht; der Hook-Hinweis wirkt auch ohne.
 
 ## 0.3.2 (15.10.2026)

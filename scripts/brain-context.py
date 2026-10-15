@@ -107,36 +107,63 @@ def begruessung() -> str:
 
 
 OFFEN = os.path.join(CB_HOME, "offen-angeboten")
-# Abschied in kurzen Prompts: „danke, das wars“, „fertig für heute“, „Feierabend“, „tschüss“. Lange Prompts
-# zählen nicht, dort ist „das wars“ meist Teil einer Arbeitsanweisung.
-ABSCHIED = re.compile(
-    r"\b(das\s+war['’]?s|das\s+war\s+es|fertig\s+f(ü|ue)r\s+heute|f(ü|ue)r\s+heute\s+fertig|feierabend|"
-    r"schluss\s+f(ü|ue)r\s+heute|mach(e|en)?\s+(wir\s+)?schluss|tsch(ü|ue)ss?|ciao|bis\s+morgen|"
-    r"sch(ö|oe)nen\s+(abend|feierabend)|sch(ö|oe)nes\s+wochenende)\b", re.IGNORECASE)
+OFFEN_TAGE = 7  # Sitzungs-IDs älter als das fallen aus dem Stempel
+# Abschied: der ganze Prompt besteht aus Abschiedsformeln und Füllwörtern („danke, das wars“, „ok, fertig für heute“,
+# „Feierabend!“). Ein Abschiedswort in einer Arbeitsanweisung („Schick das bis morgen an Mats“, „Vor Feierabend noch
+# PO-049 prüfen“) zählt nicht (Review B1). Fälle: tests/pruefe-offen.py.
+ABSCHIED_KERN = (r"das\s+war['’]?s|das\s+war\s+es|fertig\s+f(ü|ue)r\s+heute|f(ü|ue)r\s+heute\s+fertig|feierabend|"
+                 r"schluss\s+f(ü|ue)r\s+heute|mach(e|en)?\s+(wir\s+)?schluss|tsch(ü|ue)ss?|ciao|bis\s+morgen|"
+                 r"sch(ö|oe)nen\s+(abend|feierabend)|sch(ö|oe)nes\s+wochenende")
+ABSCHIED_FUELL = (r"(?:\s|[,.!:;]|danke(?:\s+dir|\s+euch)?|vielen\s+dank|ok(?:ay)?|gut|super|top|alles\s+klar|dann|und|"
+                  r"erstmal|mal|ich|bin|wir\s+sind|f(ü|ue)r\s+heute|dir|euch|auch)*")
+ABSCHIED = re.compile(rf"^{ABSCHIED_FUELL}(?:(?:{ABSCHIED_KERN}){ABSCHIED_FUELL})+$", re.IGNORECASE)
+ABSCHIED_MAX = 80  # Zeichen; ein Abschied ist kurz, und die Grenze hält die Regex billig
+
+
+def ist_abschied(prompt: str) -> bool:
+    p = (prompt or "").strip()
+    return bool(p) and len(p) <= ABSCHIED_MAX and not p.startswith("/") and bool(ABSCHIED.match(p))
+
+
+def _stempel_lesen() -> dict:
+    """Sitzungs-ID → Zeitpunkt aus ~/.cb-brain/offen-angeboten (Zeilen „<id>\t<epoch>“). Kaputte Zeilen fallen weg."""
+    eintraege = {}
+    try:
+        with open(OFFEN, encoding="utf-8", errors="replace") as fh:
+            for zeile in fh:
+                teile = zeile.strip().split("\t")
+                if len(teile) == 2:
+                    try:
+                        eintraege[teile[0]] = float(teile[1])
+                    except ValueError:
+                        pass
+    except Exception:
+        pass  # fehlt oder kaputt: wie leer, wird beim nächsten Schreiben ersetzt (Review B5)
+    return eintraege
 
 
 def abschluss_hinweis(inp: dict) -> str:
     """Schließt die Person die Arbeit ab, einmal je Sitzung an /offen erinnern. Claude entscheidet, ob etwas
-    offen ist, und legt nichts ohne ausdrückliches Ja an (Firmenregel: keine KI-Aufgaben). Stempel: die
-    Sitzungs-ID in ~/.cb-brain/offen-angeboten."""
+    offen ist, und legt nichts ohne ausdrückliches Ja an (Firmenregel: keine KI-Aufgaben). Der Stempel hält die
+    Sitzungs-IDs der letzten sieben Tage, damit parallele Sitzungen sich nicht gegenseitig zurücksetzen (Review B2)."""
     try:
-        prompt = (inp.get("prompt") or "").strip()
-        if not prompt or len(prompt) > 200 or prompt.startswith("/") or not ABSCHIED.search(prompt):
+        if not ist_abschied(inp.get("prompt") or ""):
             return ""
+        sitzung = re.sub(r"\s+", "", str(inp.get("session_id") or ""))
+        if not sitzung:
+            return ""  # ohne Sitzungs-ID keine Einmal-Garantie, also kein Hinweis (Review B6)
         with open(os.path.join(CB_HOME, "tool-key"), encoding="utf-8") as fh:
             if not fh.read().strip():
                 return ""  # ohne Schlüssel kann /offen nichts anlegen
-        sitzung = str(inp.get("session_id") or "")
-        if sitzung:
-            try:
-                with open(OFFEN, encoding="utf-8") as fh:
-                    if fh.read().strip() == sitzung:
-                        return ""
-            except OSError:
-                pass
-            os.makedirs(CB_HOME, exist_ok=True)
-            with open(OFFEN, "w", encoding="utf-8") as fh:
-                fh.write(sitzung + "\n")
+        jetzt = time.time()
+        eintraege = {k: v for k, v in _stempel_lesen().items() if jetzt - v < OFFEN_TAGE * 86400}
+        if sitzung in eintraege:
+            return ""
+        eintraege[sitzung] = jetzt
+        tmp = f"{OFFEN}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.writelines(f"{k}\t{int(v)}\n" for k, v in sorted(eintraege.items(), key=lambda kv: kv[1]))
+        os.replace(tmp, OFFEN)  # atomar: ein paralleler Hook liest nie eine halbe Datei
         return ("<cb-plugin>Die Person schließt die Arbeit offenbar ab. Sind in dieser Sitzung offene Punkte entstanden "
                 "(eigene Zusagen, vereinbarte nächste Schritte, Warten auf andere), biete einmal in einem Satz an, sie mit "
                 "/offen als Aufgaben ins Tool zu legen. Ist nichts offen, hast du es schon angeboten oder hat die Person "
