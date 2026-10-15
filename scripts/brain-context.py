@@ -49,7 +49,7 @@ def update_hinweis() -> str:
             version = raw.strip()
         version = version.strip()
         if not re.fullmatch(r"\d+(\.\d+){1,3}([-+][0-9A-Za-z.]{1,20})?", version):
-            version = "eine neue Version"  # nur eine echte Versionsnummer geht in den Kontext
+            return ""  # nur eine echte Versionsnummer geht in den Kontext, sonst kein Hinweis (Review B1)
         return (f"<cb-plugin>Das Plugin cb-brain-client wurde auf {version} aktualisiert; aktiv ab dem nächsten "
                 "Start von Claude Code (oder /reload-plugins). Sag das dem Nutzer einmal in einem Satz.</cb-plugin>")
     except Exception:

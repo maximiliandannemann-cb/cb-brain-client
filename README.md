@@ -33,7 +33,7 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 4 s; startet einmal am Tag das Selbst-Update.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Suche 4 s); startet einmal am Tag das Selbst-Update.
 - `scripts/selbst-update.py`: Selbst-Update über die `claude`-CLI, läuft losgelöst im Hintergrund.
 - `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
 - `skills/*`: die sechs Befehle.

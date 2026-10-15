@@ -93,7 +93,8 @@ def take_lock() -> bool:
 def short(text: str) -> str:
     """Letzte Ausgabezeile für das Log, Zugangsdaten in URLs geschwärzt."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
-    last = lines[-1] if lines else ""
+    # Die fatal:-Zeile von git nennt den Grund, die letzte Zeile ist oft nur Fülltext (Review B3).
+    last = next((ln for ln in lines if ln.lower().startswith(("fatal:", "error:", "✘"))), lines[-1] if lines else "")
     return re.sub(r"://[^/@\s]+@", "://***@", last)[:200]
 
 
@@ -125,9 +126,13 @@ def main() -> None:
         rc_p, out_p = run(cli, "update", PLUGIN)
         after = installed_version()
         if after and before and after != before:
-            with open(NOTE, "w", encoding="utf-8") as fh:
+            tmp = NOTE + ".tmp"  # atomar, damit der Hook nie eine halbe Notiz liest (Review B1)
+            with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump({"version": after, "vorher": before, "zeit": datetime.now().isoformat(timespec="seconds")}, fh)
+            os.replace(tmp, NOTE)
             result = "aktualisiert"
+        elif not after:
+            result = "unbekannt"  # installed_plugins.json nicht lesbar (Review B2)
         elif rc_m == 0 and rc_p == 0:
             result = "aktuell"
         else:
