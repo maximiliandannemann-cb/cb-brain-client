@@ -17,11 +17,15 @@ Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `pyt
 
 3. In Claude Code: `/wiki-setup <schlüssel>`.
 
-Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
+Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
 
 ## Aufgaben (ab v0.2.0)
 
 `/aufgaben` zeigt die eigenen Aufgaben aus dem Tool und arbeitet sie ab: „was steht an“, „CB-123“, „ist erledigt“, „verschieb auf Freitag“, „leg an: …“. Jede Änderung läuft unter dem Namen, dem der Schlüssel gehört. Neue Aufgaben entstehen nur auf ausdrückliche Anweisung, Löschen geht nur im Tool. Derselbe Schlüssel wie fürs Wiki, keine weitere Einrichtung.
+
+## Ware (ab v0.3.0)
+
+`/ware` liest aus dem Tool, was zur Ware gehört: Bestellungen und ihr Stand („Wo steht PO-049?“), Sendungen zu Amazon, Bestand je Produkt (FBA, Lager, unterwegs), die Bestellplanung und den Absatz auf Amazon und in den Shops. Nur lesen, dieselben Zahlen wie im Tool. Reichweite und Prognose bleiben im Tool (Bestandsprognose), Finanzen (EK, Zahlungen, Cashflow) gibt es über Claude nicht. Derselbe Schlüssel, keine weitere Einrichtung.
 
 ## Wenn der Wiki-Kontext fehlt
 
@@ -29,9 +33,14 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 2,5 s.
-- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
-- `skills/*`: die fünf Befehle.
-- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 4 s.
+- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
+- `skills/*`: die sechs Befehle.
+- `CHANGELOG.md`: was sich je Version geändert hat.
+- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt. `/wiki-setup` hängt ihn nur an, wenn er fehlt; wer ihn schon hat, ergänzt die Zeile zu `/ware` und `/aufgaben` von Hand oder löscht den Abschnitt und ruft `/wiki-setup` erneut auf.
+
+## Neue Version ausliefern
+
+Claude Code holt eine Änderung nur, wenn die Versionsnummer steigt; bei gleicher Nummer meldet `plugin update` „already at the latest version“. Deshalb bei jeder Änderung `version` in `.claude-plugin/plugin.json` und `.claude-plugin/marketplace.json` gleich hochzählen und einen Eintrag in `CHANGELOG.md` schreiben. Wer über „Claude Code verbinden“ im Tool eingerichtet hat (ab 15.10.2026), hat Auto-Update an und bekommt die neue Version beim nächsten Start von Claude Code; ältere Einrichtungen wiederholen das Verbinden einmal oder rufen `claude plugin update cb-brain-client@cleverbrands` auf.
 
 Keine Geheimnisse im Repo. Der Schlüssel entsteht im Tool und liegt nur bei der Person.
