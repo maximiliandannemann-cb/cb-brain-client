@@ -24,7 +24,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Jede 
 
 ## Anlegen, nur auf ausdrückliche Anweisung
 
-Nur wenn die Person es verlangt („leg an“, „mach eine Aufgabe“): `aufgabe-neu --titel "<titel>" [--beschreibung "<text>"] [--fuer <Name>] [--faellig YYYY-MM-DD] [--prio 1-4]`. Ohne `--fuer` gehört sie der Person selbst. Nie von sich aus Aufgaben anlegen und keine Aufgabenlisten aus Mails, Meetings oder Notizen vorschlagen (Firmenregel: keine KI-Aufgaben).
+Nur wenn die Person es verlangt („leg an“, „mach eine Aufgabe“): `aufgabe-neu --titel "<titel>" [--beschreibung "<text>"] [--fuer <Name>] [--faellig YYYY-MM-DD] [--prio 1-4]`. Ohne `--fuer` gehört sie der Person selbst. Nie von sich aus Aufgaben anlegen und keine Aufgabenlisten aus Mails, Meetings oder Notizen vorschlagen (Firmenregel: keine KI-Aufgaben). Einzige Ausnahme: `/offen` bietet am Ende einer Sitzung an, was dort offen geblieben ist, und legt erst nach Ja an.
 
 ## Fehler und Grenzen
 

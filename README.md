@@ -17,11 +17,15 @@ Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `pyt
 
 3. In Claude Code: `/wiki-setup <schlüssel>`.
 
-Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
+Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/offen` legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
 
 ## Aufgaben (ab v0.2.0)
 
 `/aufgaben` zeigt die eigenen Aufgaben aus dem Tool und arbeitet sie ab: „was steht an“, „CB-123“, „ist erledigt“, „verschieb auf Freitag“, „leg an: …“. Jede Änderung läuft unter dem Namen, dem der Schlüssel gehört. Neue Aufgaben entstehen nur auf ausdrückliche Anweisung, Löschen geht nur im Tool. Derselbe Schlüssel wie fürs Wiki, keine weitere Einrichtung.
+
+## Offene Punkte (ab v0.4.0)
+
+`/offen` sammelt am Ende einer Sitzung, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), prüft mit `aufgaben --suche` auf Dubletten und zeigt eine kurze Liste mit Titel, Person und Frist. Angelegt wird erst nach ausdrücklichem Ja; zu einer schon offenen Aufgabe schlägt es eine Notiz vor. Besteht ein Prompt nur aus einem Abschied („danke, das wars“, „Feierabend!“), erinnert der Kontext-Hook Claude einmal je Sitzung daran; ein Abschiedswort in einer Arbeitsanweisung („Schick das bis morgen an Mats“) zählt nicht. Stempel `~/.cb-brain/offen-angeboten`: eine Zeile je Sitzungs-ID mit Zeitpunkt, Einträge älter als sieben Tage fallen weg. Prüfskript: `/usr/bin/python3 tests/pruefe-offen.py`.
 
 ## Ware (ab v0.3.0)
 
@@ -33,12 +37,12 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Suche 4 s); startet einmal am Tag das Selbst-Update.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Suche 4 s); startet einmal am Tag das Selbst-Update, erinnert beim Abschied einmal je Sitzung an `/offen`.
 - `scripts/selbst-update.py`: Selbst-Update über die `claude`-CLI, läuft losgelöst im Hintergrund.
 - `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
-- `skills/*`: die sechs Befehle.
+- `skills/*`: die sieben Befehle.
 - `CHANGELOG.md`: was sich je Version geändert hat.
-- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt. `/wiki-setup` hängt ihn nur an, wenn er fehlt; wer ihn schon hat, ergänzt die Zeile zu `/ware` und `/aufgaben` von Hand oder löscht den Abschnitt und ruft `/wiki-setup` erneut auf.
+- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt. `/wiki-setup` hängt ihn nur an, wenn er fehlt; wer ihn schon hat, ergänzt die Zeilen zu `/ware`, `/aufgaben` und `/offen` von Hand oder löscht den Abschnitt und ruft `/wiki-setup` erneut auf.
 
 ## Neue Version ausliefern
 

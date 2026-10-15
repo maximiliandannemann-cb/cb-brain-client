@@ -7,4 +7,5 @@
 - Am Ende einer längeren Arbeitssitzung mit Firmenbezug `/drop session` vorschlagen: ein Auszug mit Entscheidungen, Fakten und Ergebnissen, den der Nutzer vor dem Einwerfen sieht.
 - Fragen zur Firma zuerst mit `/wiki <frage>` beantworten, mit Quellen. Nichts erfinden, was nicht im Wiki steht.
 - Fragen zu Bestellungen (POs), Sendungen, Bestand, Bestellplanung oder Absatz mit `/ware` aus dem Tool beantworten: nur lesen, Nummern wörtlich, Stand der Daten nennen; Reichweite und Finanzen stehen nur im Tool. Eigene Aufgaben aus dem Tool mit `/aufgaben`.
+- Schließt der Nutzer die Arbeit ab und sind in der Sitzung offene Punkte entstanden (Zusagen, nächste Schritte, Warten auf andere): einmal `/offen` anbieten. Anlegen nur nach ausdrücklichem Ja; nach Nein nicht wieder fragen.
 - Persönliche Notizen dieses Vaults bleiben hier; ins Wiki geht nur, was CleverBrands betrifft.
