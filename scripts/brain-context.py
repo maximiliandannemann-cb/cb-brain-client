@@ -47,7 +47,9 @@ def update_hinweis() -> str:
             version = str(json.loads(raw).get("version") or "")
         except Exception:
             version = raw.strip()
-        version = re.sub(r"[^0-9A-Za-z.+-]", "", version)[:20] or "eine neue Version"
+        version = version.strip()
+        if not re.fullmatch(r"\d+(\.\d+){1,3}([-+][0-9A-Za-z.]{1,20})?", version):
+            version = "eine neue Version"  # nur eine echte Versionsnummer geht in den Kontext
         return (f"<cb-plugin>Das Plugin cb-brain-client wurde auf {version} aktualisiert; aktiv ab dem nächsten "
                 "Start von Claude Code (oder /reload-plugins). Sag das dem Nutzer einmal in einem Satz.</cb-plugin>")
     except Exception:
