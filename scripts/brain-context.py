@@ -2,8 +2,8 @@
 """UserPromptSubmit-Hook: schickt den Prompt an die Wiki-Suche des Tools und gibt bis zu fünf
 Treffer als <brain-context> zurück. Nie blockieren: jeder Fehler, fehlender Schlüssel und jedes
 Zeitlimit enden still mit Exit 0 (Spec 8.2). Slash-Befehle und kurze Prompts überspringen die Suche.
-Außerdem: einmal je 24 h losgelöst scripts/selbst-update.py starten und nach einem Update einmal
-einen <cb-plugin>-Hinweis ausgeben."""
+Außerdem: einmal je 24 h losgelöst scripts/selbst-update.py starten, nach einem Update einmal
+einen <cb-plugin>-Hinweis ausgeben und beim Abschied (einmal je Sitzung) an /offen erinnern."""
 from __future__ import annotations
 
 import hashlib, json, os, re, subprocess, sys, time, urllib.request
@@ -100,8 +100,47 @@ def begruessung() -> str:
             fh.write(marke + "\n")
         return ("<cb-plugin>Das CleverBrands-Plugin ist verbunden. Sag dem Nutzer einmal kurz und in eigenen Worten, "
                 "was jetzt geht: Fragen zur Firma bekommen automatisch Treffer aus dem Firmen-Wiki, /wiki fragt gezielt nach, "
-                "/aufgaben zeigt und pflegt die eigenen Aufgaben, /ware liest Bestellungen, Sendungen, Bestand und Absatz, "
+                "/aufgaben zeigt und pflegt die eigenen Aufgaben, /offen legt am Ende offene Punkte als Aufgaben an (nur nach Ja), /ware liest Bestellungen, Sendungen, Bestand und Absatz, "
                 "/drop wirft Wissen ins Wiki. Empfiehl /wiki-setup nur, falls der Abschnitt „CleverBrands-Wiki“ in seiner CLAUDE.md noch fehlt; nicht selbst ausführen.</cb-plugin>")
+    except Exception:
+        return ""
+
+
+OFFEN = os.path.join(CB_HOME, "offen-angeboten")
+# Abschied in kurzen Prompts: „danke, das wars“, „fertig für heute“, „Feierabend“, „tschüss“. Lange Prompts
+# zählen nicht, dort ist „das wars“ meist Teil einer Arbeitsanweisung.
+ABSCHIED = re.compile(
+    r"\b(das\s+war['’]?s|das\s+war\s+es|fertig\s+f(ü|ue)r\s+heute|f(ü|ue)r\s+heute\s+fertig|feierabend|"
+    r"schluss\s+f(ü|ue)r\s+heute|mach(e|en)?\s+(wir\s+)?schluss|tsch(ü|ue)ss?|ciao|bis\s+morgen|"
+    r"sch(ö|oe)nen\s+(abend|feierabend)|sch(ö|oe)nes\s+wochenende)\b", re.IGNORECASE)
+
+
+def abschluss_hinweis(inp: dict) -> str:
+    """Schließt die Person die Arbeit ab, einmal je Sitzung an /offen erinnern. Claude entscheidet, ob etwas
+    offen ist, und legt nichts ohne ausdrückliches Ja an (Firmenregel: keine KI-Aufgaben). Stempel: die
+    Sitzungs-ID in ~/.cb-brain/offen-angeboten."""
+    try:
+        prompt = (inp.get("prompt") or "").strip()
+        if not prompt or len(prompt) > 200 or prompt.startswith("/") or not ABSCHIED.search(prompt):
+            return ""
+        with open(os.path.join(CB_HOME, "tool-key"), encoding="utf-8") as fh:
+            if not fh.read().strip():
+                return ""  # ohne Schlüssel kann /offen nichts anlegen
+        sitzung = str(inp.get("session_id") or "")
+        if sitzung:
+            try:
+                with open(OFFEN, encoding="utf-8") as fh:
+                    if fh.read().strip() == sitzung:
+                        return ""
+            except OSError:
+                pass
+            os.makedirs(CB_HOME, exist_ok=True)
+            with open(OFFEN, "w", encoding="utf-8") as fh:
+                fh.write(sitzung + "\n")
+        return ("<cb-plugin>Die Person schließt die Arbeit offenbar ab. Sind in dieser Sitzung offene Punkte entstanden "
+                "(eigene Zusagen, vereinbarte nächste Schritte, Warten auf andere), biete einmal in einem Satz an, sie mit "
+                "/offen als Aufgaben ins Tool zu legen. Ist nichts offen, hast du es schon angeboten oder hat die Person "
+                "abgelehnt: nichts dazu sagen. Nie ohne ausdrückliches Ja anlegen.</cb-plugin>")
     except Exception:
         return ""
 
@@ -115,6 +154,11 @@ def main() -> None:
             print(hinweis)
     try:
         inp = json.load(sys.stdin)
+        if not isinstance(inp, dict):
+            return
+        hinweis = abschluss_hinweis(inp)
+        if hinweis:
+            print(hinweis)
         prompt = (inp.get("prompt") or "").strip()
         if len(prompt) < 30 or prompt.startswith("/"):
             return
