@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 (16.10.2026)
+
+- Neu: `/kasse` für die Bruno-Kaffeekasse und vier Befehle in `cbtool.py`: `kasse` (Stand: fällig mit Zinsen, noch nicht fällig, heute, nächste 12:00, eigene Meldungen, für den Kassenwart „Zu prüfen“), `kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]`, `kasse-widersprechen --meldung <nr> --grund <text>`, `kasse-erlassen --fuer <name> --tag YYYY-MM-DD [--bis YYYY-MM-DD] --grund <text>`. Grund: Ab 20.10.2026 ist werktags um 12:00 fällig, was am Vortag aufgelaufen ist; gemeldet wird in Claude Code.
+- Das Tool rechnet und entscheidet alles (Beträge in Cent, Fälligkeit, Zinsen, wer widersprechen oder erlassen darf). Das Plugin zeigt die Antwort und die Meldung des Tools unverändert. Der Body enthält nur gesetzte Felder; Betrag, Datum, Empfänger und Grund werden vor dem Senden geprüft.
+- Screenshot: Claude liest Betrag, Datum und Empfänger selbst ab und übergibt nur diese Angaben. Das Skript liest keine Bilder, nimmt keine Dateien, und das Bild wird nie hochgeladen oder gespeichert. Eine Abweichung zum Fälligen nennt Claude vor der Frage; gemeldet wird nur nach ausdrücklichem Ja.
+- Kontext-Hook: Mo bis Fr 08:00 bis 18:59 (Berlin) fragt er höchstens alle 15 Minuten beim Tool nach (`GET /api/brain-read/kasse`, Zeitlimit 1,5 s) und zeigt dessen fertigen Satz höchstens einmal je Stunde: dem Zahler ab 12:00, wenn etwas fällig ist, dem Kassenwart ab 08:00, wenn eine Meldung wartet. Nach einer Meldung liefert das Tool keinen Satz mehr, der Hinweis endet. Außerhalb des Fensters kein Netz. Fehler, Zeitlimit und ein Tool ohne Kasse (404) enden still. Stempel `~/.cb-brain/kasse-hinweis` („gefragt<TAB>gezeigt“, atomar), parallele Sitzungen teilen ihn.
+- Zeitbudget des Hooks: Die Wiki-Suche bekommt, was nach der Kasse übrig ist (zusammen höchstens 5,4 s, Grenze 6 s). Gemessen mit `/usr/bin/python3` gegen einen lokalen Stub: 0,26 s ohne Verzögerung, 2,2 s mit kalter Suche, 5,5 s im schlimmsten Fall (Kasse und Suche hängen).
+- Prüfskript `tests/pruefe-kasse.py` (ohne Framework, ohne Netz): Betrag, Bodies, lokale Fehler, Antworten 200/201/400/401/403/404/409, Hook-Fenster, Stempel, Zeitbudget.
+- Braucht das Tool mit der Kasse (company-interface PR #377); davor sagen die Befehle „Die Kasse ist im Tool noch nicht da.“ und der Hook schweigt.
+
 ## 0.5.0 (15.10.2026)
 
 - `aufgabe-aendern` kennt `--grund "<text>"`: ein Satz, warum sich eine bestehende Frist ändert oder wegfällt. Nur zusammen mit `--faellig` oder `--faellig-weg`, 1 bis 300 Zeichen (Zeilenumbrüche werden Leerzeichen, wie im Tool). Ohne `--grund` schickt der Befehl genau denselben Body wie bisher. Grund: Das Tool nimmt ab 19.10.2026 eine Friständerung nur mit Grund an; er steht danach im Verlauf der Aufgabe.
