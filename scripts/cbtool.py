@@ -31,6 +31,13 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
                            [--kanal amazon|shop|alle] [--je produkt|tag|woche]
           Nur lesen. Limit 1-200 (Standard 50, bestand 200). Bis drei Treffer: mit Einzelheiten und Link.
+
+Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
+          cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
+          cbtool.py kasse-widersprechen --meldung <nr> --grund <text>
+          cbtool.py kasse-erlassen --fuer <name> --tag YYYY-MM-DD [--bis YYYY-MM-DD] --grund <text>
+          Das Tool rechnet und entscheidet, wer was darf (Kassenwart Mats, für Mats' Beträge Max).
+          Das Skript liest keine Bilder: Betrag, Datum und Empfänger liest Claude vom Screenshot ab.
 """
 # macOS bringt ab Werk nur Python 3.9 mit, und `python3` zeigt ohne Homebrew darauf (Issue #1, 18.09.).
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
@@ -76,8 +83,9 @@ def token() -> str | None:
         return None
 
 
-def call(path: str, body=None, method: str = "POST", key: str | None = None, timeout: float = TIMEOUT, via: str = "skill", plain_errors: bool = False):
+def call(path: str, body=None, method: str = "POST", key: str | None = None, timeout: float = TIMEOUT, via: str = "skill", plain_errors: bool = False, bei_404: str | None = None):
     # plain_errors: Fehlertext des Servers ohne „Tool antwortet …“ und mit der Liste gültiger Namen (Aufgaben-Befehle).
+    # bei_404: eigener Text, wenn es die Route im Tool noch nicht gibt (Kasse vor dem Live-Gang).
     key = key or token()
     if not key:
         raise SystemExit("Kein Schlüssel. Im Tool unter Wiki › Verbinden erzeugen, dann: /wiki-setup <schlüssel>")
@@ -111,6 +119,8 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
             pass
         if e.code == 401:
             raise SystemExit("Schlüssel wird nicht angenommen (401). Im Tool unter Wiki › Verbinden prüfen oder neu erzeugen.")
+        if e.code == 404 and bei_404:
+            raise SystemExit(bei_404)
         if plain_errors:
             if namen and "Möglich:" not in msg:  # nicht doppelt, falls der Server die Namen schon nennt
                 msg = (msg.rstrip() + (" " if msg.rstrip().endswith(".") else ". ") if msg else "") + "Möglich: " + ", ".join(namen)
@@ -990,6 +1000,272 @@ WARE = {
 }
 
 
+# ---------------------------------------------------------------- Kasse: Bruno-Kaffeekasse (Vertrag vertrag-kasse.md, 16.10.2026)
+# Das Skript rechnet nichts: Beträge, Fälligkeit, Zinsen und wer was darf entscheidet das Tool (kasse-core.ts).
+# Es liest keine Bilder und nimmt keine Dateien: Claude liest den Screenshot und übergibt nur Betrag, Datum, Empfänger.
+
+KASSE = "/api/brain-read/kasse"
+KASSE_FEHLT = "Die Kasse ist im Tool noch nicht da."
+KASSE_MAX_CENT = 100_000  # wie im Tool (kasse-core.ts, MAX_CENT)
+KASSE_EMPFAENGER_MAX = 80
+KASSE_GRUND_MAX = 300
+KASSE_NAME_MAX = 80
+WOCHENTAG = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+AMPEL_TEXT = {"gruen": "grün", "gelb": "gelb", "rot": "rot"}
+
+
+def _cent(wert: str | None) -> int:
+    """„6,60“, „6.60“, „6,6“, „6“, „6,60 €“ → 660. Alles andere ist ein Bedienfehler vor jedem Netzaufruf."""
+    if wert is None:
+        _falsch("kasse-melden braucht --betrag, z. B. --betrag 6,60.")
+    w = re.sub(r"\s+", "", wert).replace("€", "").replace("EUR", "")
+    m = re.match(r"^(\d{1,6})(?:[,.](\d{1,2}))?$", w)
+    if not m:
+        _falsch(f"--betrag erwartet Euro wie 6,60, nicht „{wert}“.")
+    cent = int(m.group(1)) * 100 + int((m.group(2) or "0").ljust(2, "0"))
+    if not 1 <= cent <= KASSE_MAX_CENT:
+        _falsch(f"--betrag muss zwischen 0,01 € und {KASSE_MAX_CENT // 100} € liegen, nicht „{wert}“.")
+    return cent
+
+
+def _kasse_text(wert: str | None, name: str, hoechstens: int, pflicht: bool = True) -> str | None:
+    """Wie im Tool normalisiert (Leerraum zu einem Leerzeichen, außen getrimmt), gezählt in UTF-16-Einheiten wie JavaScript."""
+    if wert is None:
+        if pflicht:
+            _falsch(f"{name} fehlt.")
+        return None
+    t = re.sub(r"\s+", " ", wert).strip()
+    if not t:
+        _falsch(f"{name} ist leer.")
+    if len(t.encode("utf-16-le")) // 2 > hoechstens:
+        _falsch(f"{name} darf höchstens {hoechstens} Zeichen lang sein.")
+    return t
+
+
+def _kasse_tag(wert: str | None, name: str, pflicht: bool = True) -> str | None:
+    if wert is None:
+        if pflicht:
+            _falsch(f"{name} fehlt (YYYY-MM-DD).")
+        return None
+    return _tag_param(wert, name)
+
+
+def _ct(c) -> str:
+    """660 → „6,60 €“, 123456 → „1.234,56 €“ (ganze Cent, kein Gleitkomma)."""
+    c = int(c or 0)
+    vz, c = ("-" if c < 0 else ""), abs(c)
+    return vz + f"{c // 100:,}".replace(",", ".") + f",{c % 100:02d} €"
+
+
+def _wann(wert: str | None) -> str:
+    """ISO-Zeitpunkt → „Di 20.10. 12:00“ (Europe/Berlin)."""
+    if not wert:
+        return "?"
+    try:
+        t = datetime.fromisoformat(wert.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return wert
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    if BERLIN:
+        t = t.astimezone(BERLIN)
+    return f"{WOCHENTAG[t.weekday()]} {t:%d.%m.} {t:%H:%M}"
+
+
+def _wtag(tag: str | None) -> str:
+    """„2026-10-19“ → „Mo 19.10.“"""
+    try:
+        d = datetime.strptime(tag or "", "%Y-%m-%d")
+    except ValueError:
+        return tag or "?"
+    return f"{WOCHENTAG[d.weekday()]} {d:%d.%m.}"
+
+
+def _offen(stand: dict) -> int:
+    """Was eine Meldung decken müsste: fällig (mit Zinsen) plus bald fällig. Dieselbe Zahl, gegen die das Tool die Abweichung misst."""
+    return int(stand.get("faelligCent") or 0) + int(stand.get("baldCent") or 0)
+
+
+def _posten_zeile(p: dict) -> str:
+    n = len(p.get("aufgaben") or [])
+    zins = int(p.get("wertCent") or 0) - int(p.get("sollCent") or 0)
+    teile = [_wtag(p.get("tag")), f"{n} Aufgabe{'' if n == 1 else 'n'} × {p.get('satz')} € = {_ct(p.get('sollCent'))}" + (f" + {_ct(zins)} Zinsen" if zins > 0 else "")]
+    status = p.get("status")
+    if status == "erlassen":
+        e = p.get("erlass") or {}
+        teile.append("erlassen" + (f" („{e['grund']}“)" if e.get("grund") else ""))
+    elif status == "bald":
+        teile.append(f"fällig {_wann(p.get('faelligAb'))}")
+    elif status == "faellig":
+        teile.append(f"offen {_ct(p.get('restCent'))}, fällig seit {_wann(p.get('faelligAb'))}")
+    elif status == "gemeldet":
+        teile.append("gemeldet" + (f", offen {_ct(p.get('restCent'))}" if p.get("restCent") else ""))
+    else:
+        teile.append(status or "?")
+    if p.get("vorlaeufig"):
+        teile.append("vorläufig")
+    return " · ".join(teile)
+
+
+def _meldung_zeile(m: dict, mit_name: bool = False) -> str:
+    teile = [f"Nr. {m.get('nr')}"]
+    if mit_name:
+        # Der Name kommt nur, wenn das Tool ihn mitliefert; sonst das Kürzel des Kontos (nie raten).
+        teile.append(m.get("name") or m.get("zahlerName") or f"Konto {str(m.get('zahler') or '?')[:8]}")
+    teile += [_ct(m.get("cent")), m.get("beleg") or "?"]
+    status = m.get("status")
+    if status == "offen":
+        teile.append(f"offen, ohne Widerspruch bestätigt ab {_wann(m.get('bestaetigtAb'))}")
+    elif status == "widersprochen":
+        w = m.get("widerspruch") or {}
+        teile.append("widersprochen" + (f": {w['grund']}" if w.get("grund") else ""))
+    else:
+        teile.append(status or "?")
+    if mit_name and m.get("offenVorherCent") is not None and m.get("offenVorherCent") != m.get("cent"):
+        teile.append(f"offen waren {_ct(m['offenVorherCent'])}")
+    return " · ".join(teile)
+
+
+def _stand_kurz(s: dict) -> str:
+    """Ein Satz nach einer Buchung: offen jetzt, Erinnerung an oder aus."""
+    f = int(s.get("faelligCent") or 0)
+    text = f"Offen jetzt: {_ct(_offen(s))}"
+    if f:
+        text += f", davon fällig {_ct(f)}; Erinnerung läuft weiter"
+        if s.get("naechste"):
+            text += f", {_wann(s['naechste'].get('at'))} werden es {_ct(s['naechste'].get('cent'))}"
+    else:
+        text += ". Nichts fällig, Erinnerungen aus"
+    return text + "."
+
+
+def _kasse_call(body: dict | None) -> dict:
+    if body is None:
+        return call(KASSE, method="GET", plain_errors=True, bei_404=KASSE_FEHLT)
+    return call(KASSE, body, plain_errors=True, bei_404=KASSE_FEHLT)
+
+
+def cmd_kasse(args: list[str]) -> None:
+    _rest_leer(args)
+    res = _kasse_call(None)
+    s = res.get("stand") or {}
+    jetzt = datetime.now(BERLIN) if BERLIN else datetime.now()
+    print(f"Kasse {s.get('name') or '?'} · Stand {WOCHENTAG[jetzt.weekday()]} {jetzt:%d.%m. %H:%M}")
+    f = int(s.get("faelligCent") or 0)
+    if f:
+        seit = sorted(p.get("faelligAb") for p in s.get("posten") or [] if p.get("status") == "faellig" and p.get("faelligAb"))
+        zins = int(s.get("davonZinsenCent") or 0)
+        print(f"Fällig: {_ct(f)}" + (f" seit {_wann(seit[0])}" if seit else "") + (f" (davon {_ct(zins)} Zinsen)" if zins else ""))
+    else:
+        print("Fällig: nichts")
+    if s.get("baldCent"):
+        print(f"Noch nicht fällig: {_ct(s['baldCent'])} (je Tag erst bei seiner 12:00, ohne Zinsen)")
+    print(f"Offen gesamt (fällig + bald): {_ct(_offen(s))}")
+    h = s.get("heute")
+    if h is None:
+        print("Heute: Wochenende, zählt nicht")
+    elif not h.get("cent"):
+        print("Heute: 0,00 €")
+    else:
+        n = len(h.get("aufgaben") or [])
+        print(f"Heute: {_ct(h['cent'])} ({n} Aufgabe{'' if n == 1 else 'n'} × {h.get('satz')} €, Ampel {AMPEL_TEXT.get(h.get('ampel'), h.get('ampel'))})")
+    if s.get("naechste"):
+        print(f"Ohne Meldung {_wann(s['naechste'].get('at'))}: {_ct(s['naechste'].get('cent'))}")
+    if s.get("gemeldetCent"):
+        print(f"Gemeldet, noch nicht bestätigt: {_ct(s['gemeldetCent'])}")
+    if s.get("guthabenCent"):
+        print(f"Guthaben: {_ct(s['guthabenCent'])} (wird auf die nächsten Tage angerechnet)")
+    print(f"Seit Start insgesamt: {_ct(s.get('gesamtCent'))}")
+    posten = [p for p in s.get("posten") or [] if p.get("sollCent") and p.get("status") != "bezahlt"]
+    bezahlt = sum(1 for p in s.get("posten") or [] if p.get("sollCent") and p.get("status") == "bezahlt")
+    if posten:
+        print("Tage mit Betrag:")
+        for p in posten:
+            print("  " + _posten_zeile(p))
+    if bezahlt:
+        print(f"Bezahlt: {bezahlt} Tag{'' if bezahlt == 1 else 'e'}")
+    meldungen = s.get("meldungen") or []
+    if meldungen:
+        zeigen = [m for m in meldungen if m.get("status") != "bestaetigt"] + [m for m in meldungen if m.get("status") == "bestaetigt"][-5:]
+        print("Meldungen:")
+        for m in sorted(zeigen, key=lambda x: x.get("nr") or 0):
+            print("  " + _meldung_zeile(m))
+    pruefen = res.get("zuPruefen") or []
+    if pruefen:
+        print("Zu prüfen (du bist Kassenwart; ohne Widerspruch gilt jede Meldung ab der genannten Zeit):")
+        for m in pruefen:
+            print("  " + _meldung_zeile(m, mit_name=True))
+
+
+def cmd_kasse_melden(args: list[str]) -> None:
+    cent = _cent(_wert(args, "--betrag"))
+    datum = _kasse_tag(_wert(args, "--datum"), "--datum")
+    empfaenger = _kasse_text(_wert(args, "--empfaenger"), "--empfaenger", KASSE_EMPFAENGER_MAX)
+    fuer = _kasse_text(_wert(args, "--fuer"), "--fuer", KASSE_NAME_MAX, pflicht=False)
+    _rest_leer(args)
+    body = {"aktion": "melden", "cent": cent, "datum": datum, "empfaenger": empfaenger}
+    if fuer is not None:  # nur gesetzte Felder: das Tool lehnt unbekannte und leere ab
+        body["fuer"] = fuer
+    res = _kasse_call(body)
+    if res.get("schonGebucht"):
+        print(f"Schon gemeldet (Nr. {res['schonGebucht']}), nichts doppelt gebucht. " + _stand_kurz(res.get("stand") or {}))
+        return
+    g = (res.get("gebucht") or [{}])[0]
+    z = res.get("zahler") or res.get("stand") or {}
+    m = next((x for x in z.get("meldungen") or [] if x.get("nr") == g.get("nr")), {})
+    if g.get("von") and g.get("von") != g.get("zahler"):
+        print(f"Für {z.get('name') or '?'} gemeldet (Nr. {g.get('nr')}): {_ct(g.get('cent'))}, sofort bestätigt (vom Kassenwart).")
+    else:
+        print(f"Gemeldet (Nr. {g.get('nr')}): {_ct(g.get('cent'))}, „{g.get('beleg') or '?'}“. "
+              f"Der Kassenwart kann bis {_wann(m.get('bestaetigtAb'))} widersprechen, sonst gilt es.")
+    ab = res.get("abweichungCent")  # gegen offen gesamt (fällig + noch nicht fällig), wie das Tool rechnet
+    if ab and ab > 0:
+        print(f"Abweichung: {_ct(ab)} mehr als offen war; das wird Guthaben für die nächsten Tage.")
+    elif ab and z.get("faelligCent"):
+        print(f"Abweichung: {_ct(z['faelligCent'])} vom Fälligen bleiben offen; Erinnerung und Zinsen laufen darauf weiter.")
+    elif ab:
+        print(f"Fälliges ist gedeckt; {_ct(-ab)} für noch nicht fällige Tage bleiben offen (je Tag ab seiner 12:00).")
+    print(_stand_kurz(z))
+
+
+def cmd_kasse_widersprechen(args: list[str]) -> None:
+    nr = _zahl(_wert(args, "--meldung"), "--meldung", 1, 2_000_000_000)
+    grund = _kasse_text(_wert(args, "--grund"), "--grund", KASSE_GRUND_MAX)
+    _rest_leer(args)
+    if nr is None:
+        _falsch("kasse-widersprechen braucht --meldung <nr>.")
+    res = _kasse_call({"aktion": "widersprechen", "meldung": nr, "grund": grund})
+    z = res.get("zahler") or {}
+    print(f"Widersprochen (Nr. {nr}), Grund „{grund}“. Steht im Verlauf.")
+    print(f"{z.get('name') or 'Zahler'}: " + _stand_kurz(z))
+
+
+def cmd_kasse_erlassen(args: list[str]) -> None:
+    fuer = _kasse_text(_wert(args, "--fuer"), "--fuer", KASSE_NAME_MAX)
+    tag = _kasse_tag(_wert(args, "--tag"), "--tag")
+    bis = _kasse_tag(_wert(args, "--bis"), "--bis", pflicht=False)
+    grund = _kasse_text(_wert(args, "--grund"), "--grund", KASSE_GRUND_MAX)
+    _rest_leer(args)
+    body = {"aktion": "erlassen", "fuer": fuer, "tag": tag, "grund": grund}
+    if bis is not None:
+        body["bis"] = bis
+    res = _kasse_call(body)
+    z = res.get("zahler") or {}
+    soll = {p.get("tag"): p.get("sollCent") for p in z.get("posten") or []}
+    tage = [b.get("tag") for b in res.get("gebucht") or [] if b.get("tag")]
+    liste = ", ".join(f"{_wtag(t)} ({_ct(soll.get(t))})" for t in tage) or "?"
+    print(f"Erlassen: {z.get('name') or fuer} {liste}, Grund „{grund}“. Steht im Verlauf.")
+    print(_stand_kurz(z))
+
+
+KASSE_BEFEHLE = {
+    "kasse": cmd_kasse,
+    "kasse-melden": cmd_kasse_melden,
+    "kasse-widersprechen": cmd_kasse_widersprechen,
+    "kasse-erlassen": cmd_kasse_erlassen,
+}
+
+
 def main(argv: list[str]) -> None:
     global HILFE
     if len(argv) < 2:
@@ -1025,6 +1301,9 @@ def main(argv: list[str]) -> None:
     elif cmd in WARE:
         HILFE = "Ware:"
         WARE[cmd](args)
+    elif cmd in KASSE_BEFEHLE:
+        HILFE = "Kasse:"
+        KASSE_BEFEHLE[cmd](args)
     else:
         print(__doc__)
         raise SystemExit(2)

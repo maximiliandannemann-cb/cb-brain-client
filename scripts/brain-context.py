@@ -3,10 +3,15 @@
 Treffer als <brain-context> zurück. Nie blockieren: jeder Fehler, fehlender Schlüssel und jedes
 Zeitlimit enden still mit Exit 0 (Spec 8.2). Slash-Befehle und kurze Prompts überspringen die Suche.
 Außerdem: einmal je 24 h losgelöst scripts/selbst-update.py starten, nach einem Update einmal
-einen <cb-plugin>-Hinweis ausgeben und beim Abschied (einmal je Sitzung) an /offen erinnern."""
+einen <cb-plugin>-Hinweis ausgeben und beim Abschied (einmal je Sitzung) an /offen erinnern.
+Kaffeekasse: Mo–Fr 08:00–18:59 Berlin höchstens alle 15 min beim Tool fragen und höchstens einmal je Stunde
+dessen fertigen Satz zeigen, wenn etwas fällig ist oder eine Meldung auf den Kassenwart wartet (kasse_hinweis)."""
 from __future__ import annotations
 
 import hashlib, json, os, re, subprocess, sys, time, urllib.request
+from datetime import datetime
+
+START = time.time()  # Zeitbudget des Hooks zählt ab hier (Grenze in hooks.json: 6 s)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CB_HOME = os.path.expanduser("~/.cb-brain")
@@ -76,6 +81,89 @@ def lade_cbtool():
 
 # 4 s statt 2,5: live gemessen 12.09. sind Ping und Suche über Vercel kalt 1,6 bis 1,8 s; mit 2,5 s fiel der Kontext auf kalten Funktionen still weg.
 LIMIT, MAX_CHARS, TIMEOUT = 5, 3600, 4.0
+# Gesamtbudget für Netzaufrufe des Hooks: Kasse (höchstens 1,5 s) plus Suche (höchstens 4 s) dürfen zusammen nicht über
+# die 6 s aus hooks.json laufen; die Suche bekommt, was nach der Kasse übrig ist (mindestens 0,5 s).
+BUDGET = 5.4
+
+
+KASSE_STEMPEL = os.path.join(CB_HOME, "kasse-hinweis")
+KASSE_ABFRAGE_ALLE = 15 * 60   # höchstens so oft beim Tool fragen
+KASSE_ZEIGEN_ALLE = 3600       # höchstens einmal je Stunde zeigen (Grilling F4)
+KASSE_TIMEOUT = 1.5
+KASSE_VON, KASSE_BIS = 8, 18   # Berliner Stunden inklusive: 08:00 bis 18:59. Welcher Text in welcher Stunde kommt
+                               # (Zahler ab 12:00, Kassenwart ab 08:00), entscheidet das Tool; außerhalb kein Netz.
+KASSE_MAX_CHARS = 700
+
+
+def _jetzt() -> float:
+    return time.time()  # eigene Funktion, damit das Prüfskript die Uhr stellen kann
+
+
+def _berlin(epoch: float):
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.fromtimestamp(epoch, ZoneInfo("Europe/Berlin"))
+    except Exception:
+        return None  # ohne Zeitzonendaten lieber kein Hinweis als einer zur falschen Zeit
+
+
+def _kasse_stempel_lesen() -> tuple:
+    """(zuletzt gefragt, zuletzt gezeigt) als Epoch. Fehlt oder kaputt: (0, 0). Zeiten in der Zukunft gelten nicht
+    (Uhr zurückgestellt), sonst bliebe der Hinweis stumm."""
+    try:
+        with open(KASSE_STEMPEL, encoding="utf-8") as fh:
+            teile = fh.read().strip().split("\t")
+        werte = [float(teile[0]), float(teile[1])]
+    except Exception:
+        return 0.0, 0.0
+    jetzt = _jetzt()
+    return tuple(w if w <= jetzt + 60 else 0.0 for w in werte)
+
+
+def _kasse_stempel_schreiben(gefragt: float, gezeigt: float) -> None:
+    os.makedirs(CB_HOME, exist_ok=True)
+    tmp = f"{KASSE_STEMPEL}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(f"{int(gefragt)}\t{int(gezeigt)}\n")
+    os.replace(tmp, KASSE_STEMPEL)  # atomar: parallele Sitzungen lesen nie eine halbe Datei
+
+
+def kasse_hinweis() -> str:
+    """Kaffeekasse: den fertigen Satz des Tools (`hinweis` aus GET /api/brain-read/kasse) höchstens einmal je Stunde
+    zeigen. Der Hook rechnet nichts und meldet nie. Endet sofort nach einer Meldung, weil das Tool dann keinen Satz
+    mehr liefert. Parallele Sitzungen teilen den Stempel; im ungünstigsten Fall zeigen zwei gleichzeitige Prompts ihn
+    beide einmal. Jeder Fehler endet still."""
+    try:
+        jetzt = _jetzt()
+        b = _berlin(jetzt)
+        if b is None or b.weekday() > 4 or not KASSE_VON <= b.hour <= KASSE_BIS:
+            return ""
+        gefragt, gezeigt = _kasse_stempel_lesen()
+        if jetzt - gezeigt < KASSE_ZEIGEN_ALLE or jetzt - gefragt < KASSE_ABFRAGE_ALLE:
+            return ""
+        _kasse_stempel_schreiben(jetzt, gezeigt)  # vor dem Aufruf: ein Fehler oder Zeitlimit fragt erst in 15 min wieder
+        tools = lade_cbtool()
+        if not tools:
+            return ""
+        token, tool_url = tools
+        key = token()
+        if not key:
+            return ""
+        req = urllib.request.Request(tool_url() + "/api/brain-read/kasse", method="GET", headers={
+            "Authorization": f"Bearer {key}", "Accept": "application/json", "X-CB-Via": "hook"})
+        with urllib.request.urlopen(req, timeout=KASSE_TIMEOUT) as r:
+            text = json.loads(r.read().decode("utf-8")).get("hinweis")
+        if not isinstance(text, str):
+            return ""
+        text = re.sub(r"\s+", " ", text.replace("<", "‹").replace(">", "›")).strip()[:KASSE_MAX_CHARS]
+        if not text:
+            return ""
+        _kasse_stempel_schreiben(jetzt, jetzt)
+        return ("<cb-plugin>Kaffeekasse: " + text + " Sag das der Person einmal in einem Satz. Ist eine Zahlung fällig, "
+                "biete an, sie jetzt zu melden (PayPal-Screenshot hier reinziehen, /kasse). Melden, widersprechen oder "
+                "erlassen nur nach ausdrücklichem Ja der Person.</cb-plugin>")
+    except Exception:
+        return ""
 
 
 BEGRUESST = os.path.join(CB_HOME, "begruesst")
@@ -101,7 +189,7 @@ def begruessung() -> str:
         return ("<cb-plugin>Das CleverBrands-Plugin ist verbunden. Sag dem Nutzer einmal kurz und in eigenen Worten, "
                 "was jetzt geht: Fragen zur Firma bekommen automatisch Treffer aus dem Firmen-Wiki, /wiki fragt gezielt nach, "
                 "/aufgaben zeigt und pflegt die eigenen Aufgaben, /offen legt am Ende offene Punkte als Aufgaben an (nur nach Ja), /ware liest Bestellungen, Sendungen, Bestand und Absatz, "
-                "/drop wirft Wissen ins Wiki. Empfiehl /wiki-setup nur, falls der Abschnitt „CleverBrands-Wiki“ in seiner CLAUDE.md noch fehlt; nicht selbst ausführen.</cb-plugin>")
+                "/kasse zeigt die Kaffeekasse und meldet eine Zahlung (nur nach Ja), /drop wirft Wissen ins Wiki. Empfiehl /wiki-setup nur, falls der Abschnitt „CleverBrands-Wiki“ in seiner CLAUDE.md noch fehlt; nicht selbst ausführen.</cb-plugin>")
     except Exception:
         return ""
 
@@ -176,7 +264,7 @@ def main() -> None:
     # Update-Prüfung und Hinweis vor allen frühen Rücksprüngen und vor dem Laden von cbtool:
     # sie laufen auch bei kurzen Prompts, Slash-Befehlen und wenn cbtool.py kaputt ist.
     selbst_update()
-    for hinweis in (update_hinweis(), begruessung()):
+    for hinweis in (update_hinweis(), begruessung(), kasse_hinweis()):
         if hinweis:
             print(hinweis)
     try:
@@ -200,7 +288,9 @@ def main() -> None:
         req = urllib.request.Request(tool_url() + "/api/brain-read/search", data=body, headers={
             "Authorization": f"Bearer {key}", "Content-Type": "application/json", "Accept": "application/json",
             "X-CB-Via": "hook"})
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        # Was die Kasse verbraucht hat, geht der Suche ab; so bleibt der Hook unter dem Limit aus hooks.json.
+        rest = max(0.5, min(TIMEOUT, BUDGET - (time.time() - START)))
+        with urllib.request.urlopen(req, timeout=rest) as r:
             hits = json.loads(r.read().decode("utf-8")).get("hits", [])
         if not hits:
             return
