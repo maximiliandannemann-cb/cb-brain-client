@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 (15.10.2026)
+
+- `aufgabe-aendern` kennt `--grund "<text>"`: ein Satz, warum sich eine bestehende Frist ändert oder wegfällt. Nur zusammen mit `--faellig` oder `--faellig-weg`, 1 bis 300 Zeichen (Zeilenumbrüche werden Leerzeichen, wie im Tool). Ohne `--grund` schickt der Befehl genau denselben Body wie bisher. Grund: Das Tool nimmt ab 19.10.2026 eine Friständerung nur mit Grund an; er steht danach im Verlauf der Aufgabe.
+- Antwortet das Tool „Bitte kurz begründen, warum die Frist sich ändert.“, sagt der Befehl das klar und nennt `--grund` als nächsten Schritt.
+- `/aufgaben`: Vor dem Verschieben oder Entfernen einer bestehenden Frist fragt Claude die Person nach einem Satz Grund und übergibt ihn wörtlich. Claude formuliert keinen Grund selbst. Erstes Setzen einer Frist braucht keinen. `/offen` verschiebt keine Fristen und verweist dafür auf `/aufgaben`.
+- Prüfskript `tests/pruefe-grund.py` (ohne Framework, ohne Netz): Body mit und ohne `--grund`, lokale Längenprüfung, Meldung bei fehlendem Grund.
+- Braucht das Tool mit der Erweiterung vom 15.10.2026; das Tool davor lehnt das Feld `grund` ab.
+
 ## 0.4.0 (15.10.2026)
 
 - Neu: `/offen`. Am Ende einer Sitzung schlägt Claude vor, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), als Aufgaben ins Tool zu legen: kurze Liste mit Titel („Produkt: Tätigkeit“), Person und Frist, Dublettenprüfung mit `aufgaben --suche`, bei vorhandener Aufgabe eine Notiz statt Neuanlage. Angelegt wird nur nach ausdrücklichem Ja, ohne Frist nichts. Grund: Zusagen aus Claude-Sitzungen sollen im Tool landen, auch wenn niemand sie von Hand anlegt.
