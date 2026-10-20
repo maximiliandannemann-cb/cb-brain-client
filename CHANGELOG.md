@@ -3,9 +3,9 @@
 ## 0.7.0 (20.10.2026)
 
 - Neu: `/erledigt` und `cbtool.py erledigt --titel "…" --groesse klein|mittel|gross [--notiz "…"]`. Trägt abgeschlossene Arbeit für die Person selbst ins Tool ein (POST mit `erledigt: true`, ohne Person und ohne Frist). Grund: Die Bruno-Punkte zählen ab 20.10.2026 jede erledigte Aufgabe nach Größe (klein 1, mittel 3, groß 5; ohne Größe = mittel), auch Arbeit, die vorher keine Aufgabe war (Ads, Bugfixes, Creative Direction).
-- Verhalten: Ist ein Arbeitsschritt abgeschlossen (gemergt, verschickt, fertig, entschieden), schlägt Claude am Ende der Antwort einen Eintrag vor: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Größe schätzt Claude nach der Arbeitszeit. Eingetragen nur nach Ja; gibt es eine offene Aufgabe dazu, wird diese erledigt gesetzt statt neu angelegt. Nicht für Kleinkram unter etwa 15 Minuten, nicht zweimal für denselben Schritt. Zeile in `CLAUDE-abschnitt.md`; wer den Abschnitt schon hat, ergänzt sie von Hand.
+- Verhalten: Ist ein Arbeitsschritt abgeschlossen (gemergt, verschickt, fertig, entschieden), schlägt Claude am Ende der Antwort einen Eintrag vor: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Größe schätzt Claude nach der Arbeitszeit. Eingetragen nur nach Ja; gibt es eine offene Aufgabe dazu, wird diese erledigt gesetzt statt neu angelegt. Nicht für Kleinkram unter etwa 15 Minuten, nicht zweimal für denselben Schritt. Zeile in `CLAUDE-abschnitt.md`. Damit die Regel auch bei einem älteren Abschnitt ankommt, gibt der Kontext-Hook sie einmal je Sitzung als Hinweis mit (kein Netz, Fehler enden still; Stempel `~/.cb-brain/erledigt-regel`, Sitzungs-IDs mit Zeitpunkt, älter als sieben Tage fallen weg; ohne Sitzungs-ID oder Schlüssel kein Hinweis).
 - `aufgabe-neu` und `aufgabe-aendern` kennen `--groesse` (auch „groß“). Eine falsche Größe ist ein Bedienfehler, nichts wird gesendet. `aufgabe CB-123` zeigt die Größe.
-- Prüfskript `tests/pruefe-erledigt.py` (ohne Framework, ohne Netz): Body nach Vertrag, falsche Größe abgelehnt, 403 des Tools unverändert.
+- Prüfskript `tests/pruefe-erledigt.py` (ohne Framework, ohne Netz): Body nach Vertrag, falsche Größe abgelehnt, 403 des Tools unverändert, Hook-Hinweis einmal je Sitzung.
 - Braucht das Tool mit der Spalte `groesse`; davor lehnt das Tool die Felder `groesse` und `erledigt` beim Anlegen ab.
 
 ## 0.6.1 (20.10.2026)

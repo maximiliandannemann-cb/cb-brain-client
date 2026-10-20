@@ -114,5 +114,47 @@ pruefe("aufgabe-aendern: Ausgabe nennt Größe", "Größe groß" in out)
 code, out, a = lauf("aufgabe-aendern", ["CB-300", "--groesse", "riesig"])
 pruefe("aufgabe-aendern falsche Größe: Exit 2, keine Anfrage", code == 2 and a is None)
 
+# Kontext-Hook: Regel für /erledigt-Vorschläge einmal je Sitzung (Stempel ~/.cb-brain/erledigt-regel), echter Prozess.
+import subprocess, time
+
+HOOK = os.path.join(os.path.dirname(CBTOOL), "brain-context.py")
+REGEL = "**Erledigt:** <Titel> (<Größe>). Eintragen?"
+
+
+def hook(h: str, prompt: str, sitzung) -> str:
+    env = dict(os.environ, HOME=h, CB_NO_AUTOUPDATE="1", CB_TOOL_URL="http://127.0.0.1:9")
+    inp = {"prompt": prompt, "hook_event_name": "UserPromptSubmit"}
+    if sitzung is not None:
+        inp["session_id"] = sitzung
+    r = subprocess.run([sys.executable, HOOK], input=json.dumps(inp), capture_output=True, text=True, env=env, timeout=20)
+    pruefe(f"Hook Exit 0 ohne stderr ({prompt[:20]!r}, {sitzung})", r.returncode == 0 and not r.stderr)
+    return r.stdout
+
+
+h = tempfile.mkdtemp()
+os.makedirs(os.path.join(h, ".cb-brain"))
+with open(os.path.join(h, ".cb-brain", "tool-key"), "w") as fh:
+    fh.write("cbw_test")
+stempel = os.path.join(h, ".cb-brain", "erledigt-regel")
+erste = hook(h, "hallo", "S1")
+pruefe("Hook: erste Anfrage der Sitzung bringt die Regel", REGEL in erste and "<cb-plugin>Ist in dieser Sitzung" in erste and "nur nach Ja, mit /erledigt" in erste)
+pruefe("Hook: zweite Anfrage derselben Sitzung ohne Regel", REGEL not in hook(h, "und jetzt PO-049 prüfen, bitte mit Stand", "S1"))
+pruefe("Hook: Slash-Befehl in derselben Sitzung ohne Regel", REGEL not in hook(h, "/aufgaben", "S1"))
+pruefe("Hook: neue Sitzung bekommt die Regel", REGEL in hook(h, "/aufgaben", "S2"))
+pruefe("Hook: ohne Sitzungs-ID keine Regel", REGEL not in hook(h, "hallo", None))
+pruefe("Hook: ohne Schlüssel keine Regel", REGEL not in hook(tempfile.mkdtemp(), "hallo", "S3"))
+with open(stempel, "w") as fh:
+    fh.write(f"ALT\t{int(time.time()) - 8 * 86400}\nNEU\t{int(time.time())}\nkaputt\n")
+pruefe("Hook: Eintrag älter als 7 Tage zählt nicht", REGEL in hook(h, "hallo", "ALT"))
+pruefe("Hook: frischer Eintrag zählt", REGEL not in hook(h, "hallo", "NEU"))
+with open(stempel) as fh:
+    inhalt = fh.read()
+pruefe("Hook: Stempel ohne kaputte Zeile, eigene Datei", "kaputt" not in inhalt and not os.path.exists(os.path.join(h, ".cb-brain", "offen-angeboten")))
+with open(stempel, "wb") as fh:
+    fh.write(b"\xff\xfe\x00kaputt")
+pruefe("Hook: Stempel mit Nicht-UTF-8 wird ersetzt", REGEL in hook(h, "hallo", "S4"))
+abschied = hook(h, "danke, das wars", "S5")
+pruefe("Hook: Abschied in neuer Sitzung bringt Regel und /offen", REGEL in abschied and "/offen" in abschied)
+
 print(f"\n{'Alles grün' if not fehler else f'{fehler} Fehler'} (Python {sys.version.split()[0]})")
 sys.exit(1 if fehler else 0)

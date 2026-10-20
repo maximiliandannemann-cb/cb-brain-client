@@ -4,6 +4,7 @@ Treffer als <brain-context> zurück. Nie blockieren: jeder Fehler, fehlender Sch
 Zeitlimit enden still mit Exit 0 (Spec 8.2). Slash-Befehle und kurze Prompts überspringen die Suche.
 Außerdem: einmal je 24 h losgelöst scripts/selbst-update.py starten, nach einem Update einmal
 einen <cb-plugin>-Hinweis ausgeben und beim Abschied (einmal je Sitzung) an /offen erinnern.
+Einmal je Sitzung die Regel für /erledigt-Vorschläge mitgeben (erledigt_hinweis), auch wer den alten CLAUDE.md-Abschnitt hat.
 Kaffeekasse: Mo–Fr 08:00–18:59 Berlin höchstens alle 15 min beim Tool fragen und höchstens einmal je Stunde
 dessen fertigen Satz zeigen, wenn etwas fällig ist oder eine Meldung auf den Kassenwart wartet (kasse_hinweis)."""
 from __future__ import annotations
@@ -213,11 +214,11 @@ def ist_abschied(prompt: str) -> bool:
     return bool(p) and len(p) <= ABSCHIED_MAX and not p.startswith("/") and bool(ABSCHIED.match(p))
 
 
-def _stempel_lesen() -> dict:
-    """Sitzungs-ID → Zeitpunkt aus ~/.cb-brain/offen-angeboten (Zeilen „<id>\t<epoch>“). Kaputte Zeilen fallen weg."""
+def _stempel_lesen(pfad: str = OFFEN) -> dict:
+    """Sitzungs-ID → Zeitpunkt aus einem Sitzungs-Stempel (Zeilen „<id>\t<epoch>“). Kaputte Zeilen fallen weg."""
     eintraege = {}
     try:
-        with open(OFFEN, encoding="utf-8", errors="replace") as fh:
+        with open(pfad, encoding="utf-8", errors="replace") as fh:
             for zeile in fh:
                 teile = zeile.strip().split("\t")
                 if len(teile) == 2:
@@ -230,6 +231,43 @@ def _stempel_lesen() -> dict:
     return eintraege
 
 
+def _erstes_mal(pfad: str, inp: dict) -> bool:
+    """True genau beim ersten Aufruf je Sitzungs-ID (Stempel `pfad`, Einträge der letzten OFFEN_TAGE Tage, atomar
+    geschrieben). Ohne Sitzungs-ID oder Schlüssel False: keine Einmal-Garantie bzw. kein Nutzen ohne Schlüssel."""
+    sitzung = re.sub(r"\s+", "", str(inp.get("session_id") or ""))
+    if not sitzung:
+        return False
+    with open(os.path.join(CB_HOME, "tool-key"), encoding="utf-8") as fh:
+        if not fh.read().strip():
+            return False
+    jetzt = time.time()
+    eintraege = {k: v for k, v in _stempel_lesen(pfad).items() if jetzt - v < OFFEN_TAGE * 86400}
+    if sitzung in eintraege:
+        return False
+    eintraege[sitzung] = jetzt
+    tmp = f"{pfad}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.writelines(f"{k}\t{int(v)}\n" for k, v in sorted(eintraege.items(), key=lambda kv: kv[1]))
+    os.replace(tmp, pfad)  # atomar: ein paralleler Hook liest nie eine halbe Datei
+    return True
+
+
+ERLEDIGT_REGEL = os.path.join(CB_HOME, "erledigt-regel")
+
+
+def erledigt_hinweis(inp: dict) -> str:
+    """Einmal je Sitzung die Regel für /erledigt-Vorschläge (Bruno-Punkte nach Größe, 20.10.2026). Steht auch im
+    CLAUDE.md-Abschnitt, der aber nur bei neuer Einrichtung ankommt. Kein Netz; jeder Fehler endet still."""
+    try:
+        if not _erstes_mal(ERLEDIGT_REGEL, inp):
+            return ""
+        return ("<cb-plugin>Ist in dieser Sitzung ein Arbeitsschritt abgeschlossen (gemergt, verschickt, fertig, entschieden), "
+                "schlag am Ende der Antwort einen Eintrag für die Bruno-Punkte vor: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ "
+                "(klein unter 1 Stunde, mittel halber Tag, groß ab einem Tag). Eintragen nur nach Ja, mit /erledigt.</cb-plugin>")
+    except Exception:
+        return ""
+
+
 def abschluss_hinweis(inp: dict) -> str:
     """Schließt die Person die Arbeit ab, einmal je Sitzung an /offen erinnern. Claude entscheidet, ob etwas
     offen ist, und legt nichts ohne ausdrückliches Ja an (Firmenregel: keine KI-Aufgaben). Der Stempel hält die
@@ -237,21 +275,9 @@ def abschluss_hinweis(inp: dict) -> str:
     try:
         if not ist_abschied(inp.get("prompt") or ""):
             return ""
-        sitzung = re.sub(r"\s+", "", str(inp.get("session_id") or ""))
-        if not sitzung:
-            return ""  # ohne Sitzungs-ID keine Einmal-Garantie, also kein Hinweis (Review B6)
-        with open(os.path.join(CB_HOME, "tool-key"), encoding="utf-8") as fh:
-            if not fh.read().strip():
-                return ""  # ohne Schlüssel kann /offen nichts anlegen
-        jetzt = time.time()
-        eintraege = {k: v for k, v in _stempel_lesen().items() if jetzt - v < OFFEN_TAGE * 86400}
-        if sitzung in eintraege:
+        # Ohne Sitzungs-ID keine Einmal-Garantie (Review B6), ohne Schlüssel kann /offen nichts anlegen.
+        if not _erstes_mal(OFFEN, inp):
             return ""
-        eintraege[sitzung] = jetzt
-        tmp = f"{OFFEN}.{os.getpid()}.tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.writelines(f"{k}\t{int(v)}\n" for k, v in sorted(eintraege.items(), key=lambda kv: kv[1]))
-        os.replace(tmp, OFFEN)  # atomar: ein paralleler Hook liest nie eine halbe Datei
         return ("<cb-plugin>Die Person schließt die Arbeit offenbar ab. Sind in dieser Sitzung offene Punkte entstanden "
                 "(eigene Zusagen, vereinbarte nächste Schritte, Warten auf andere), biete einmal in einem Satz an, sie mit "
                 "/offen als Aufgaben ins Tool zu legen. Ist nichts offen, hast du es schon angeboten oder hat die Person "
@@ -271,9 +297,9 @@ def main() -> None:
         inp = json.load(sys.stdin)
         if not isinstance(inp, dict):
             return
-        hinweis = abschluss_hinweis(inp)
-        if hinweis:
-            print(hinweis)
+        for hinweis in (erledigt_hinweis(inp), abschluss_hinweis(inp)):
+            if hinweis:
+                print(hinweis)
         prompt = (inp.get("prompt") or "").strip()
         if len(prompt) < 30 or prompt.startswith("/"):
             return

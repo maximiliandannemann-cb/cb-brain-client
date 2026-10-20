@@ -25,7 +25,7 @@ Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract`
 
 ## Erledigte Arbeit (ab v0.7.0)
 
-Die Bruno-Punkte zählen seit 20.10.2026 jede erledigte Aufgabe nach Größe: klein 1, mittel 3, groß 5 (ohne Größe = mittel). Damit auch Arbeit zählt, die vorher keine Aufgabe war, schlägt Claude am Ende einer Antwort einen Eintrag vor, sobald ein Arbeitsschritt abgeschlossen ist: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Die Größe schätzt Claude (klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag). Eingetragen wird erst nach Ja, nur für die Person selbst und am heutigen Tag: `erledigt --titel "…" --groesse klein|mittel|gross [--notiz "…"]`. Gibt es schon eine offene Aufgabe dazu, setzt Claude diese erledigt (`aufgabe-aendern CB-123 --erledigt --groesse …`). `aufgabe-neu` und `aufgabe-aendern` kennen `--groesse`. Prüfskript: `/usr/bin/python3 tests/pruefe-erledigt.py`. Braucht das Tool mit der Spalte `groesse` (company-interface, Punkte nach Größe); davor lehnt es die Felder ab.
+Die Bruno-Punkte zählen seit 20.10.2026 jede erledigte Aufgabe nach Größe: klein 1, mittel 3, groß 5 (ohne Größe = mittel). Damit auch Arbeit zählt, die vorher keine Aufgabe war, schlägt Claude am Ende einer Antwort einen Eintrag vor, sobald ein Arbeitsschritt abgeschlossen ist: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Die Größe schätzt Claude (klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag). Eingetragen wird erst nach Ja, nur für die Person selbst und am heutigen Tag: `erledigt --titel "…" --groesse klein|mittel|gross [--notiz "…"]`. Gibt es schon eine offene Aufgabe dazu, setzt Claude diese erledigt (`aufgabe-aendern CB-123 --erledigt --groesse …`). `aufgabe-neu` und `aufgabe-aendern` kennen `--groesse`. Damit die Regel auch ankommt, wo der CLAUDE.md-Abschnitt älter ist, gibt der Kontext-Hook sie einmal je Sitzung als Hinweis mit (kein Netz; Stempel `~/.cb-brain/erledigt-regel`, Sitzungs-IDs mit Zeitpunkt, älter als sieben Tage fallen weg). Prüfskript: `/usr/bin/python3 tests/pruefe-erledigt.py`. Braucht das Tool mit der Spalte `groesse` (company-interface, Punkte nach Größe); davor lehnt es die Felder ab.
 
 ## Offene Punkte (ab v0.4.0)
 
@@ -49,7 +49,7 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Kasse 1,5 s, Suche mit dem Rest, höchstens 4 s); startet einmal am Tag das Selbst-Update, erinnert beim Abschied einmal je Sitzung an `/offen`, zeigt höchstens einmal je Stunde den Kassen-Hinweis.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Kasse 1,5 s, Suche mit dem Rest, höchstens 4 s); startet einmal am Tag das Selbst-Update, erinnert beim Abschied einmal je Sitzung an `/offen`, gibt einmal je Sitzung die Regel für `/erledigt`-Vorschläge mit, zeigt höchstens einmal je Stunde den Kassen-Hinweis.
 - `scripts/selbst-update.py`: Selbst-Update über die `claude`-CLI, läuft losgelöst im Hintergrund.
 - `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, erledigt, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz, kasse, kasse-melden, kasse-widersprechen, kasse-erlassen). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
 - `skills/*`: die neun Befehle.
