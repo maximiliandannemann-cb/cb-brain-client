@@ -15,8 +15,13 @@ Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speic
 Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|erledigt|alle] [--suche <text>] [--limit <n>]
           cbtool.py aufgabe CB-123
           cbtool.py aufgabe-neu --titel <text> [--beschreibung <text>] [--fuer <name>] [--faellig YYYY-MM-DD] [--prio 1-4]
+                                [--groesse klein|mittel|gross]
           cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--notiz <text>] [--faellig YYYY-MM-DD | --faellig-weg]
                                             [--grund <text>] [--prio 1-4] [--fuer <name> | --fuer-weg]
+                                            [--groesse klein|mittel|gross]
+          cbtool.py erledigt --titel <text> --groesse klein|mittel|gross [--notiz <text>]
+                                            erledigte Arbeit für sich selbst eintragen (nur nach Ja der Person)
+          --groesse: klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag (Punkte 1/3/5).
           --grund: ein Satz (1-300 Zeichen), warum sich eine bestehende Frist ändert; nur mit --faellig
           oder --faellig-weg. Ab 19.10.2026 Pflicht, sobald die Aufgabe schon eine Frist hatte.
           Prio: 1 niedrig, 2 mittel, 3 hoch, 4 dringend. Löschen geht nur im Tool.
@@ -362,6 +367,19 @@ def _grund(wert: str | None) -> str | None:
 
 GRUND_FEHLT = "Bitte kurz begründen, warum die Frist sich ändert."  # Text des Tools (400) ab 19.10.2026
 
+GROESSEN = ("klein", "mittel", "gross")  # wie im Tool (src/lib/aufgaben-view.ts, GROESSEN)
+GROESSE_TEXT = {"klein": "klein", "mittel": "mittel", "gross": "groß"}
+
+
+def _groesse(wert: str | None) -> str | None:
+    """--groesse prüfen: klein, mittel oder gross (groß geht auch). Sonst Bedienfehler, nichts wird gesendet."""
+    if wert is None:
+        return None
+    g = wert.strip().lower().replace("ß", "ss")
+    if g not in GROESSEN:
+        _falsch(f"--groesse erwartet klein, mittel oder gross, nicht „{wert}“.")
+    return g
+
 
 def _rest_leer(args: list[str]) -> None:
     if args:
@@ -411,6 +429,7 @@ def _ausfuehrlich(a: dict) -> None:
         ("Prio", a.get("prioText")),
         ("Für", a.get("fuer")),
         ("Fällig", _tag(a.get("faellig"), jahr=True)),
+        ("Größe", GROESSE_TEXT.get(a.get("groesse") or "")),
         ("Angelegt von", a.get("angelegtVon")),
         ("Aktualisiert", _tag(a.get("aktualisiert"), jahr=True)),
         ("Link", a.get("link")),
@@ -435,6 +454,7 @@ def cmd_aufgabe_neu(args: list[str]) -> None:
         "fuer": _wert(args, "--fuer"),
         "faellig": _datum(_wert(args, "--faellig")),
         "prio": _zahl(_wert(args, "--prio"), "--prio", 1, 4),
+        "groesse": _groesse(_wert(args, "--groesse")),
     }
     _rest_leer(args)
     if not (body["titel"] or "").strip():
@@ -454,6 +474,7 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
     grund = _grund(_wert(args, "--grund"))
     prio = _zahl(_wert(args, "--prio"), "--prio", 1, 4)
     fuer = _wert(args, "--fuer")
+    groesse = _groesse(_wert(args, "--groesse"))
     if len(args) != 1:
         _falsch("aufgabe-aendern braucht genau eine Nummer, z. B. CB-123." + (f" Unbekannt: {' '.join(args)}" if args else ""))
     nr = _nr(args[0])
@@ -481,6 +502,8 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         body["prio"] = prio
     if fuer or fuer_weg:
         body["fuer"] = fuer
+    if groesse is not None:
+        body["groesse"] = groesse
     if not body:
         _falsch("Nichts zu ändern.")
     try:
@@ -497,10 +520,34 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         "faellig": f"fällig {_tag(a.get('faellig'))}" if a.get("faellig") else "Fälligkeit entfernt",
         "prio": f"Prio {a.get('prioText') or a.get('prio')}",
         "fuer": f"für {a['fuer']}" if a.get("fuer") else "ohne Person",
+        "groesse": f"Größe {GROESSE_TEXT.get(a.get('groesse') or '', 'ohne')}",
     }
     geaendert = res.get("geaendert") or []
     print("Geändert: " + (", ".join(texte.get(g, g) for g in geaendert) or "nichts") + ".")
     print(_zeile(a))
+
+
+def cmd_erledigt(args: list[str]) -> None:
+    """Erledigte Arbeit für sich selbst eintragen (Punkte als Produktivitätsscore, 20.10.2026): POST mit
+    erledigt: true, ohne Person und ohne Frist; das Tool trägt sie auf das Konto des Schlüssels ein (für andere 403)."""
+    titel = _wert(args, "--titel")
+    groesse = _groesse(_wert(args, "--groesse"))
+    notiz = _wert(args, "--notiz")
+    _rest_leer(args)
+    if not (titel or "").strip():
+        _falsch("erledigt braucht --titel.")
+    if groesse is None:
+        _falsch("erledigt braucht --groesse klein, mittel oder gross.")
+    body = {"titel": titel.strip(), "groesse": groesse, "erledigt": True}
+    if notiz is not None:
+        if not notiz.strip():
+            _falsch("--notiz ist leer.")
+        body["beschreibung"] = notiz.strip()
+    res = call(AUFGABEN, body, plain_errors=True)
+    a = res.get("aufgabe") or {}
+    print(f"Eingetragen ({GROESSE_TEXT[groesse]}): " + _zeile(a))
+    if a.get("link"):
+        print(a["link"])
 
 
 # ---------------------------------------------------------------- Ware: Lesezugang Supply Chain + Absatz (14.10.2026)
@@ -1298,6 +1345,8 @@ def main(argv: list[str]) -> None:
         cmd_aufgabe_neu(args)
     elif cmd == "aufgabe-aendern":
         cmd_aufgabe_aendern(args)
+    elif cmd == "erledigt":
+        cmd_erledigt(args)
     elif cmd in WARE:
         HILFE = "Ware:"
         WARE[cmd](args)

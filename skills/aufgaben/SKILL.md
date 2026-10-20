@@ -20,7 +20,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Jede 
 
 ## Ändern, nur auf Wort der Person
 
-`aufgabe-aendern CB-123` mit `--erledigt` oder `--offen`, `--faellig YYYY-MM-DD` oder `--faellig-weg` (bei bestehender Frist mit `--grund`, siehe unten), `--prio 1-4` (niedrig, mittel, hoch, dringend), `--fuer <Name>` oder `--fuer-weg`. Nur ändern, was die Person sagt. Relative Daten („Freitag“, „nächste Woche“) vom heutigen Datum aus in YYYY-MM-DD umrechnen und das Datum im Satz nennen („verschoben auf Fr 16.10.“). Die Ausgabe in einem Satz wiedergeben.
+`aufgabe-aendern CB-123` mit `--erledigt` oder `--offen`, `--faellig YYYY-MM-DD` oder `--faellig-weg` (bei bestehender Frist mit `--grund`, siehe unten), `--prio 1-4` (niedrig, mittel, hoch, dringend), `--fuer <Name>` oder `--fuer-weg`, `--groesse klein|mittel|gross` (nur eigene Aufgaben). Nur ändern, was die Person sagt. Relative Daten („Freitag“, „nächste Woche“) vom heutigen Datum aus in YYYY-MM-DD umrechnen und das Datum im Satz nennen („verschoben auf Fr 16.10.“). Die Ausgabe in einem Satz wiedergeben.
 
 ### Frist verschieben oder entfernen: nur mit Grund der Person
 
@@ -34,7 +34,7 @@ Erstes Setzen einer Frist (die Aufgabe hatte keine) braucht keinen Grund. Antwor
 
 ## Anlegen, nur auf ausdrückliche Anweisung
 
-Nur wenn die Person es verlangt („leg an“, „mach eine Aufgabe“): `aufgabe-neu --titel "<titel>" [--beschreibung "<text>"] [--fuer <Name>] [--faellig YYYY-MM-DD] [--prio 1-4]`. Ohne `--fuer` gehört sie der Person selbst. Nie von sich aus Aufgaben anlegen und keine Aufgabenlisten aus Mails, Meetings oder Notizen vorschlagen (Firmenregel: keine KI-Aufgaben). Einzige Ausnahme: `/offen` bietet am Ende einer Sitzung an, was dort offen geblieben ist, und legt erst nach Ja an.
+Nur wenn die Person es verlangt („leg an“, „mach eine Aufgabe“): `aufgabe-neu --titel "<titel>" [--beschreibung "<text>"] [--fuer <Name>] [--faellig YYYY-MM-DD] [--prio 1-4] [--groesse klein|mittel|gross]`. Größe nur, wenn die Person sie nennt oder Claude sie nach der Arbeitszeit schätzen kann (klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag); ohne zählt sie wie mittel. Ohne `--fuer` gehört sie der Person selbst. Nie von sich aus Aufgaben anlegen und keine Aufgabenlisten aus Mails, Meetings oder Notizen vorschlagen (Firmenregel: keine KI-Aufgaben). Ausnahmen: `/offen` bietet am Ende einer Sitzung an, was dort offen geblieben ist, und `/erledigt` schlägt vor, abgeschlossene Arbeit einzutragen; beide legen erst nach Ja an.
 
 ## Fehler und Grenzen
 

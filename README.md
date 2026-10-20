@@ -17,11 +17,15 @@ Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `pyt
 
 3. In Claude Code: `/wiki-setup <schlüssel>`.
 
-Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/offen` legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz, `/kasse` zeigt die Kaffeekasse und meldet Zahlungen. Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
+Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/offen` legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz, `/kasse` zeigt die Kaffeekasse und meldet Zahlungen, `/erledigt` trägt abgeschlossene Arbeit für die Bruno-Punkte ein (nur nach Ja). Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
 
 ## Aufgaben (ab v0.2.0)
 
 `/aufgaben` zeigt die eigenen Aufgaben aus dem Tool und arbeitet sie ab: „was steht an“, „CB-123“, „ist erledigt“, „verschieb auf Freitag“, „leg an: …“. Jede Änderung läuft unter dem Namen, dem der Schlüssel gehört. Ändert sich eine bestehende Frist, fragt Claude nach einem Satz Grund und übergibt ihn wörtlich (`aufgabe-aendern CB-123 --faellig YYYY-MM-DD --grund "…"`, Pflicht im Tool ab 19.10.2026, ab v0.5.0). Neue Aufgaben entstehen nur auf ausdrückliche Anweisung, Löschen geht nur im Tool. Derselbe Schlüssel wie fürs Wiki, keine weitere Einrichtung.
+
+## Erledigte Arbeit (ab v0.7.0)
+
+Die Bruno-Punkte zählen seit 20.10.2026 jede erledigte Aufgabe nach Größe: klein 1, mittel 3, groß 5 (ohne Größe = mittel). Damit auch Arbeit zählt, die vorher keine Aufgabe war, schlägt Claude am Ende einer Antwort einen Eintrag vor, sobald ein Arbeitsschritt abgeschlossen ist: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Die Größe schätzt Claude (klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag). Eingetragen wird erst nach Ja, nur für die Person selbst und am heutigen Tag: `erledigt --titel "…" --groesse klein|mittel|gross [--notiz "…"]`. Gibt es schon eine offene Aufgabe dazu, setzt Claude diese erledigt (`aufgabe-aendern CB-123 --erledigt --groesse …`). `aufgabe-neu` und `aufgabe-aendern` kennen `--groesse`. Damit die Regel auch ankommt, wo der CLAUDE.md-Abschnitt älter ist, gibt der Kontext-Hook sie einmal je Sitzung als Hinweis mit (kein Netz; Stempel `~/.cb-brain/erledigt-regel`, Sitzungs-IDs mit Zeitpunkt, älter als sieben Tage fallen weg). Prüfskript: `/usr/bin/python3 tests/pruefe-erledigt.py`. Braucht das Tool mit der Spalte `groesse` (company-interface, Punkte nach Größe); davor lehnt es die Felder ab.
 
 ## Offene Punkte (ab v0.4.0)
 
@@ -45,12 +49,12 @@ Der Kontext-Hook blockiert nie und meldet sich nicht, wenn etwas schiefgeht. Was
 
 ## Was liegt wo
 
-- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Kasse 1,5 s, Suche mit dem Rest, höchstens 4 s); startet einmal am Tag das Selbst-Update, erinnert beim Abschied einmal je Sitzung an `/offen`, zeigt höchstens einmal je Stunde den Kassen-Hinweis.
+- `hooks/hooks.json` · `scripts/brain-context.py`: Kontext-Hook (UserPromptSubmit), nie blockierend, Zeitlimit 6 s (Kasse 1,5 s, Suche mit dem Rest, höchstens 4 s); startet einmal am Tag das Selbst-Update, erinnert beim Abschied einmal je Sitzung an `/offen`, gibt einmal je Sitzung die Regel für `/erledigt`-Vorschläge mit, zeigt höchstens einmal je Stunde den Kassen-Hinweis.
 - `scripts/selbst-update.py`: Selbst-Update über die `claude`-CLI, läuft losgelöst im Hintergrund.
-- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz, kasse, kasse-melden, kasse-widersprechen, kasse-erlassen). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
-- `skills/*`: die acht Befehle.
+- `scripts/cbtool.py`: Kern (setup, ping, search, drop, drop-file, aufgaben, aufgabe, aufgabe-neu, aufgabe-aendern, erledigt, bestellungen, bestellung, sendungen, sendung, bestand, bestellplanung, absatz, kasse, kasse-melden, kasse-widersprechen, kasse-erlassen). Schlüssel in `~/.cb-brain/tool-key`, Tool-Adresse optional in `~/.cb-brain/tool-url` oder `CB_TOOL_URL`.
+- `skills/*`: die neun Befehle.
 - `CHANGELOG.md`: was sich je Version geändert hat.
-- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt. `/wiki-setup` hängt ihn nur an, wenn er fehlt; wer ihn schon hat, ergänzt die Zeilen zu `/ware`, `/aufgaben`, `/offen` und `/kasse` von Hand oder löscht den Abschnitt und ruft `/wiki-setup` erneut auf.
+- `CLAUDE-abschnitt.md`: der Abschnitt, den `/wiki-setup` in die CLAUDE.md des Vaults hängt. `/wiki-setup` hängt ihn nur an, wenn er fehlt; wer ihn schon hat, ergänzt die Zeilen zu `/ware`, `/aufgaben`, `/offen`, `/kasse` und `/erledigt` von Hand oder löscht den Abschnitt und ruft `/wiki-setup` erneut auf.
 
 ## Neue Version ausliefern
 
