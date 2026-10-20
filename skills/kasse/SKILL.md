@@ -1,6 +1,6 @@
 ---
 name: kasse
-description: Kaffeekasse aus dem CleverBrands-Tool. Zeigt, was fällig ist, meldet eine PayPal-Zahlung an Mats (Claude liest den Screenshot, ins Tool gehen nur Betrag, Datum und Empfänger) und erlaubt dem Kassenwart Widerspruch und Erlass. Für „Kasse“, „Kaffeekasse“, „was schulde ich“, „hab eingezahlt“, einen PayPal-Screenshot oder den Kassen-Hinweis aus dem Hook.
+description: Kaffeekasse aus dem CleverBrands-Tool. Zeigt, was fällig ist, meldet eine PayPal-Zahlung an info@cleverbrands.de, das Firmenkonto (Claude liest den Screenshot, ins Tool gehen nur Betrag, Datum und Empfänger) und erlaubt dem Kassenwart Widerspruch und Erlass. Für „Kasse“, „Kaffeekasse“, „was schulde ich“, „hab eingezahlt“, einen PayPal-Screenshot oder den Kassen-Hinweis aus dem Hook.
 ---
 
 # /kasse
@@ -13,14 +13,16 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Das T
 
 ## Zahlung melden („hab eingezahlt“, Screenshot)
 
+Gezahlt wird per PayPal an info@cleverbrands.de (Firmenkonto), von allen, auch von Mats. PayPal zeigt als Empfänger die Adresse oder den Firmennamen, etwa „CleverBrands GmbH“.
+
 1. `kasse` ausführen. Vergleichswerte sind „Fällig“ (jetzt zu zahlen) und „Offen gesamt“ (fällig plus noch nicht fällig).
 2. Den Screenshot selbst ansehen und genau drei Angaben ablesen: Betrag, Datum der Zahlung, Empfänger. Nichts ergänzen. Ist etwas unlesbar oder fehlt es, nachfragen. Ohne Screenshot die Person nach Betrag, Datum und Empfänger fragen.
 3. Abweichungen sofort nennen, in einem Satz, vor der Frage:
    - Betrag passt weder zu „Fällig“ noch zu „Offen gesamt“: „Screenshot 5,00 €, fällig sind 6,60 €. Melde ich 5,00 €? Dann laufen Erinnerung und Zinsen auf 1,60 € weiter.“ Mehr als offen wird Guthaben.
-   - Empfänger ist nicht Mats (für Mats' eigene Zahlung: nicht Max).
+   - Empfänger ist weder info@cleverbrands.de noch CleverBrands (zum Beispiel eine Privatperson): „Screenshot an <Empfänger>, gezahlt wird an info@cleverbrands.de. Trotzdem melden?“
    - Datum liegt in der Zukunft oder vor dem 19.10.2026.
-4. Fragen: „Screenshot 6,60 € an Mats am 20.10., fällig sind 6,60 €. Soll ich das melden?“ Erst nach ausdrücklichem Ja:
-   `kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger "<Name wie auf dem Screenshot>"`
+4. Fragen: „Screenshot 6,60 € an CleverBrands GmbH am 20.10., fällig sind 6,60 €. Soll ich das melden?“ Erst nach ausdrücklichem Ja:
+   `kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger "<Empfänger wie auf dem Screenshot, z. B. CleverBrands GmbH>"`
 5. Die Ausgabe in einem Satz wiedergeben: Nummer, bis wann widersprochen werden kann, was jetzt noch offen ist.
 
 Das Bild bleibt in der Sitzung. Nie hochladen, nie speichern, nie als Datei oder Pfad an das Skript geben, nie mit /drop einwerfen. Ins Tool geht nur die eine Zeile aus Betrag, Datum und Empfänger. Das Skript liest keine Bilder.

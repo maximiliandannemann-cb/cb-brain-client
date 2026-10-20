@@ -265,7 +265,7 @@ def um(text: str) -> float:
 
 uhr = {"t": 0.0}
 bc._jetzt = lambda: uhr["t"]
-TEXT = "6,60 € fällig seit Di 20.10. 12:00 (davon 1,00 € Zinsen). Mi 21.10. 12:00 werden es 7,60 €. Zahlung per PayPal an den Kassenwart, dann hier melden."
+TEXT = "6,60 € fällig seit Di 20.10. 12:00 (davon 1,00 € Zinsen). Mi 21.10. 12:00 werden es 7,60 €. Zahlung per PayPal an info@cleverbrands.de, dann hier melden."
 
 
 def hinweis(zeit: str, text=TEXT, **kw):

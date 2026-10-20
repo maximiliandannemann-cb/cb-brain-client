@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 (20.10.2026)
+
+- Kaffeekasse: Gezahlt wird per PayPal an info@cleverbrands.de (Firmenkonto), nicht an Mats; das gilt für alle, auch für Mats (Max 20.10.). `/kasse` übernimmt den Empfänger vom Screenshot und nennt eine Abweichung, wenn er weder info@cleverbrands.de noch CleverBrands ist. Kassenwart bleibt Mats, für seine Beträge Max.
+
 ## 0.6.0 (16.10.2026)
 
 - Neu: `/kasse` für die Bruno-Kaffeekasse und vier Befehle in `cbtool.py`: `kasse` (Stand: fällig mit Zinsen, noch nicht fällig, heute, nächste 12:00, eigene Meldungen, für den Kassenwart „Zu prüfen“), `kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]`, `kasse-widersprechen --meldung <nr> --grund <text>`, `kasse-erlassen --fuer <name> --tag YYYY-MM-DD [--bis YYYY-MM-DD] --grund <text>`. Grund: Ab 20.10.2026 ist werktags um 12:00 fällig, was am Vortag aufgelaufen ist; gemeldet wird in Claude Code.
