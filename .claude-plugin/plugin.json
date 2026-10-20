@@ -1,7 +1,7 @@
 {
   "name": "cb-brain-client",
-  "description": "CleverBrands Wiki in Claude Code: jede Frage bekommt Wiki-Kontext, /drop wirft Wissen in die Inbox, /wiki fragt das Wiki, /aufgaben arbeitet die eigenen Aufgaben aus dem Tool ab, /offen legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), /ware liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz, /kasse zeigt die Kaffeekasse und meldet Zahlungen (nur nach Ja).",
-  "version": "0.6.1",
+  "description": "CleverBrands Wiki in Claude Code: jede Frage bekommt Wiki-Kontext, /drop wirft Wissen in die Inbox, /wiki fragt das Wiki, /aufgaben arbeitet die eigenen Aufgaben aus dem Tool ab, /offen legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), /ware liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz, /kasse zeigt die Kaffeekasse und meldet Zahlungen (nur nach Ja), /erledigt trägt abgeschlossene Arbeit für die Bruno-Punkte ein (nur nach Ja).",
+  "version": "0.7.0",
   "author": { "name": "CleverBrands" },
   "keywords": ["cleverbrands", "wiki", "company-brain", "aufgaben", "supply-chain"]
 }

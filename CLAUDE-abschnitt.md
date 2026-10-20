@@ -8,5 +8,6 @@
 - Fragen zur Firma zuerst mit `/wiki <frage>` beantworten, mit Quellen. Nichts erfinden, was nicht im Wiki steht.
 - Fragen zu Bestellungen (POs), Sendungen, Bestand, Bestellplanung oder Absatz mit `/ware` aus dem Tool beantworten: nur lesen, Nummern wörtlich, Stand der Daten nennen; Reichweite und Finanzen stehen nur im Tool. Eigene Aufgaben aus dem Tool mit `/aufgaben`.
 - Kaffeekasse mit `/kasse`: Stand zeigen, eine Zahlung nur nach ausdrücklichem Ja melden. Einen PayPal-Screenshot liest Claude selbst (Betrag, Datum, Empfänger); das Bild wird nie hochgeladen oder gespeichert.
+- Ist ein Arbeitsschritt abgeschlossen (gemergt, verschickt, fertig, entschieden), am Ende der Antwort einen `/erledigt`-Vorschlag machen: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ Größe: klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag. Eintragen nur nach Ja, vorher auf eine offene Aufgabe dazu prüfen und diese erledigt setzen. Nicht für Kleinkram unter 15 Minuten, nicht zweimal für denselben Schritt.
 - Schließt der Nutzer die Arbeit ab und sind in der Sitzung offene Punkte entstanden (Zusagen, nächste Schritte, Warten auf andere): einmal `/offen` anbieten. Anlegen nur nach ausdrücklichem Ja; nach Nein nicht wieder fragen.
 - Persönliche Notizen dieses Vaults bleiben hier; ins Wiki geht nur, was CleverBrands betrifft.
