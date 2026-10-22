@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0 (22.10.2026)
+
+- Neu: `--ergebnis "<satz>"` bei `aufgabe-aendern CB-123 --erledigt` und bei `erledigt --titel … --groesse …`. Ein Satz, was herauskam und wo es liegt, mit Link zum Beleg, wo es einen gibt; 10 bis 2000 Zeichen (Umbrüche werden Leerzeichen, gezählt wie im Tool). Grund: Ab Mo 26.10.2026 00:00 Berlin wird im Tool keine Aufgabe ohne Ergebnis erledigt, auf keinem Weg (Tool-Issue #437).
+- Ab dem Stichtag lehnt das Skript Erledigen ohne `--ergebnis` selbst ab, mit dem Text des Tools („Ergebnis fehlt: ein Satz, was herauskam und wo es liegt (mind. 10 Zeichen).“), und sendet nichts. Maßgeblich bleibt das Tool; antwortet es so, sagt das Skript, was zu tun ist. `--ergebnis` allein ändert das Ergebnis einer erledigten Aufgabe; mit `--offen` geht es nicht (wieder öffnen lässt das Ergebnis stehen).
+- `aufgabe CB-123` zeigt „Ergebnis: …“, `aufgaben --status erledigt` zeigt es unter jeder erledigten Aufgabe.
+- `/erledigt`, `/aufgaben`: Beim Abschließen schlägt Claude einen Satz Ergebnis vor und sucht den Beleg-Link selbst (PR über `gh`, Mail über die Composio-CLI mit dem Konto der Sitzung, Drive-Link). Geschrieben wird erst nach Ja; ohne gefundenen Link reicht der Satz, ein Link wird nie erfunden. `/offen` setzt nichts erledigt und verweist auf `/erledigt`.
+- Kontext-Hook und CLAUDE-Abschnitt nennen die Regel in einem Satz.
+- Prüfskript `tests/pruefe-ergebnis.py` (ohne Framework, ohne Netz, Uhr fest): fehlt vor und ab Stichtag, zu kurz, nur Leerraum, zu lang, 10 Zeichen, Emoji, Bodies, 400 des Tools, Anzeige. `tests/pruefe-erledigt.py` läuft mit Uhr vor dem Stichtag, damit es nach dem 26.10. grün bleibt.
+- Braucht das Tool mit der Spalte `ergebnis` (company-interface PR #442); davor lehnt das Tool das Feld `ergebnis` ab. Ohne `--ergebnis` schicken die Befehle denselben Body wie bisher.
+
 ## 0.7.0 (20.10.2026)
 
 - Neu: `/erledigt` und `cbtool.py erledigt --titel "…" --groesse klein|mittel|gross [--notiz "…"]`. Trägt abgeschlossene Arbeit für die Person selbst ins Tool ein (POST mit `erledigt: true`, ohne Person und ohne Frist). Grund: Die Bruno-Punkte zählen ab 20.10.2026 jede erledigte Aufgabe nach Größe (klein 1, mittel 3, groß 5; ohne Größe = mittel), auch Arbeit, die vorher keine Aufgabe war (Ads, Bugfixes, Creative Direction).

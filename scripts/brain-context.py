@@ -263,7 +263,9 @@ def erledigt_hinweis(inp: dict) -> str:
             return ""
         return ("<cb-plugin>Ist in dieser Sitzung ein Arbeitsschritt abgeschlossen (gemergt, verschickt, fertig, entschieden), "
                 "schlag am Ende der Antwort einen Eintrag für die Bruno-Punkte vor: „**Erledigt:** <Titel> (<Größe>). Eintragen?“ "
-                "(klein unter 1 Stunde, mittel halber Tag, groß ab einem Tag). Eintragen nur nach Ja, mit /erledigt.</cb-plugin>")
+                "(klein unter 1 Stunde, mittel halber Tag, groß ab einem Tag), darunter „Ergebnis: <ein Satz, was herauskam und wo es liegt>“ "
+                "mit Beleg-Link, den du selbst suchst (PR, Mail, Drive; nie erfinden, ohne Link reicht der Satz; ab 26.10.2026 Pflicht beim Erledigen). "
+                "Eintragen nur nach Ja, mit /erledigt.</cb-plugin>")
     except Exception:
         return ""
 

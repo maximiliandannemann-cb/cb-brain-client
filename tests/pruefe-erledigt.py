@@ -50,6 +50,11 @@ def falsches_urlopen(req, timeout=None):
 
 
 cb.urllib.request.urlopen = falsches_urlopen
+# Uhr vor dem Stichtag der Ergebnis-Pflicht (26.10.2026): diese Fälle prüfen Body und Größe ohne --ergebnis.
+# Die Pflicht selbst prüft tests/pruefe-ergebnis.py.
+from datetime import datetime, timezone
+
+cb._jetzt = lambda: datetime(2026, 10, 22, 10, 0, tzinfo=timezone.utc)
 
 
 def lauf(befehl, args):
@@ -138,6 +143,7 @@ with open(os.path.join(h, ".cb-brain", "tool-key"), "w") as fh:
 stempel = os.path.join(h, ".cb-brain", "erledigt-regel")
 erste = hook(h, "hallo", "S1")
 pruefe("Hook: erste Anfrage der Sitzung bringt die Regel", REGEL in erste and "<cb-plugin>Ist in dieser Sitzung" in erste and "nur nach Ja, mit /erledigt" in erste)
+pruefe("Hook: Regel nennt Ergebnis und Beleg-Link, nie erfinden", "Ergebnis: <ein Satz" in erste and "Beleg-Link" in erste and "nie erfinden" in erste)
 pruefe("Hook: zweite Anfrage derselben Sitzung ohne Regel", REGEL not in hook(h, "und jetzt PO-049 prüfen, bitte mit Stand", "S1"))
 pruefe("Hook: Slash-Befehl in derselben Sitzung ohne Regel", REGEL not in hook(h, "/aufgaben", "S1"))
 pruefe("Hook: neue Sitzung bekommt die Regel", REGEL in hook(h, "/aufgaben", "S2"))
