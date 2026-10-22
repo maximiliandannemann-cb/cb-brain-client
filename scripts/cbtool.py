@@ -16,11 +16,13 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|erledigt|a
           cbtool.py aufgabe CB-123
           cbtool.py aufgabe-neu --titel <text> [--beschreibung <text>] [--fuer <name>] [--faellig YYYY-MM-DD] [--prio 1-4]
                                 [--groesse klein|mittel|gross]
-          cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--notiz <text>] [--faellig YYYY-MM-DD | --faellig-weg]
-                                            [--grund <text>] [--prio 1-4] [--fuer <name> | --fuer-weg]
-                                            [--groesse klein|mittel|gross]
-          cbtool.py erledigt --titel <text> --groesse klein|mittel|gross [--notiz <text>]
+          cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--ergebnis <satz>] [--notiz <text>]
+                                            [--faellig YYYY-MM-DD | --faellig-weg] [--grund <text>] [--prio 1-4]
+                                            [--fuer <name> | --fuer-weg] [--groesse klein|mittel|gross]
+          cbtool.py erledigt --titel <text> --groesse klein|mittel|gross --ergebnis <satz> [--notiz <text>]
                                             erledigte Arbeit für sich selbst eintragen (nur nach Ja der Person)
+          --ergebnis: ein Satz (10-2000 Zeichen), was herauskam und wo es liegt, mit Link zum Beleg, wo es einen
+          gibt. Ab Mo 26.10.2026 Pflicht beim Erledigen; an erledigten Aufgaben auch allein änderbar.
           --groesse: klein unter 1 Stunde, mittel etwa ein halber Tag, groß ab einem Tag (Punkte 1/3/5).
           --grund: ein Satz (1-300 Zeichen), warum sich eine bestehende Frist ändert; nur mit --faellig
           oder --faellig-weg. Ab 19.10.2026 Pflicht, sobald die Aufgabe schon eine Frist hatte.
@@ -289,7 +291,10 @@ def _zeile(a: dict) -> str:
     if a.get("fuer"):
         teile.append(a["fuer"])
     teile.append(a.get("titel") or "(ohne Titel)")
-    return " · ".join(teile)
+    zeile = " · ".join(teile)
+    if a.get("erledigtAm") and a.get("ergebnis"):
+        zeile += f"\n    Ergebnis: {a['ergebnis']}"
+    return zeile
 
 
 def _nr(wert: str) -> str:
@@ -367,6 +372,44 @@ def _grund(wert: str | None) -> str | None:
 
 GRUND_FEHLT = "Bitte kurz begründen, warum die Frist sich ändert."  # Text des Tools (400) ab 19.10.2026
 
+# Ergebnis beim Erledigen (Tool-Issue #437): wie im Tool (src/lib/aufgaben-api.ts, ERGEBNIS_*). Das Tool ist maßgeblich;
+# das Skript prüft vorher, damit ohne Ergebnis nichts gesendet wird und die Meldung gleich lautet.
+ERGEBNIS_MIN, ERGEBNIS_MAX = 10, 2000
+ERGEBNIS_FEHLT = f"Ergebnis fehlt: ein Satz, was herauskam und wo es liegt (mind. {ERGEBNIS_MIN} Zeichen)."
+ERGEBNIS_PFLICHT_AB = datetime(2026, 10, 25, 23, 0, tzinfo=timezone.utc)  # Mo 26.10.2026 00:00 Berlin
+ERGEBNIS_NACHFRAGEN = ("Die Person fragen, was herauskam und wo es liegt (Beleg-Link suchen und vorschlagen), "
+                       "und nach ihrem Ja erneut mit --ergebnis \"<satz>\" aufrufen.")
+
+
+def _jetzt() -> datetime:
+    """Uhr für die Pflicht; die Prüfskripte setzen sie fest."""
+    return datetime.now(timezone.utc)
+
+
+def _ergebnis(wert: str | None) -> str | None:
+    """Ergebnis wie im Tool normalisiert (Umbrüche zu Leerzeichen, außen getrimmt). Gezählt in Zeichen wie Postgres
+    `char_length` und das Tool (`ergebnisLaenge`, Codepunkte); Python zählt genauso."""
+    if wert is None:
+        return None
+    e = re.sub(r"\s*[\r\n]+\s*", " ", wert).strip()
+    if len(e) < ERGEBNIS_MIN:
+        _falsch(ERGEBNIS_FEHLT)
+    if len(e) > ERGEBNIS_MAX:
+        _falsch(f"--ergebnis darf höchstens {ERGEBNIS_MAX} Zeichen lang sein.")
+    return e
+
+
+def _ergebnis_pflicht(ergebnis: str | None) -> None:
+    """Erledigen ohne Ergebnis ab dem Stichtag: lokal ablehnen, nichts senden (gleicher Text wie das Tool)."""
+    if ergebnis is None and _jetzt() >= ERGEBNIS_PFLICHT_AB:
+        _falsch(ERGEBNIS_FEHLT)
+
+
+def _ergebnis_meldung(e: SystemExit) -> None:
+    """400 des Tools ohne Ergebnis (älteres Skript, falsche Uhr): klar sagen, was zu tun ist."""
+    if ERGEBNIS_FEHLT in str(e.code):
+        raise SystemExit(f"Nicht erledigt: {ERGEBNIS_FEHLT}\n{ERGEBNIS_NACHFRAGEN}")
+
 GROESSEN = ("klein", "mittel", "gross")  # wie im Tool (src/lib/aufgaben-view.ts, GROESSEN)
 GROESSE_TEXT = {"klein": "klein", "mittel": "mittel", "gross": "groß"}
 
@@ -430,6 +473,7 @@ def _ausfuehrlich(a: dict) -> None:
         ("Für", a.get("fuer")),
         ("Fällig", _tag(a.get("faellig"), jahr=True)),
         ("Größe", GROESSE_TEXT.get(a.get("groesse") or "")),
+        ("Ergebnis", a.get("ergebnis")),
         ("Angelegt von", a.get("angelegtVon")),
         ("Aktualisiert", _tag(a.get("aktualisiert"), jahr=True)),
         ("Link", a.get("link")),
@@ -475,11 +519,16 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
     prio = _zahl(_wert(args, "--prio"), "--prio", 1, 4)
     fuer = _wert(args, "--fuer")
     groesse = _groesse(_wert(args, "--groesse"))
+    ergebnis = _ergebnis(_wert(args, "--ergebnis"))
     if len(args) != 1:
         _falsch("aufgabe-aendern braucht genau eine Nummer, z. B. CB-123." + (f" Unbekannt: {' '.join(args)}" if args else ""))
     nr = _nr(args[0])
     if erledigt and offen:
         _falsch("--erledigt und --offen schließen sich aus.")
+    if ergebnis is not None and offen:
+        _falsch("--ergebnis geht nicht zusammen mit --offen (wieder öffnen lässt das Ergebnis stehen).")
+    if erledigt:
+        _ergebnis_pflicht(ergebnis)
     if faellig and faellig_weg:
         _falsch("--faellig und --faellig-weg schließen sich aus.")
     if grund is not None and not (faellig or faellig_weg):
@@ -504,6 +553,9 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         body["fuer"] = fuer
     if groesse is not None:
         body["groesse"] = groesse
+    # Nur mitschicken, wenn gesetzt: das Tool vor #437 lehnt unbekannte Felder mit 400 ab.
+    if ergebnis is not None:
+        body["ergebnis"] = ergebnis
     if not body:
         _falsch("Nichts zu ändern.")
     try:
@@ -512,6 +564,7 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         if GRUND_FEHLT in str(e.code):
             raise SystemExit(f"Nicht geändert: {GRUND_FEHLT}\n{nr} hat schon eine Frist. "
                              f"Die Person nach einem Satz Grund fragen und erneut mit --grund \"<grund>\" aufrufen.")
+        _ergebnis_meldung(e)
         raise
     a = res.get("aufgabe") or {}
     texte = {
@@ -521,6 +574,7 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         "prio": f"Prio {a.get('prioText') or a.get('prio')}",
         "fuer": f"für {a['fuer']}" if a.get("fuer") else "ohne Person",
         "groesse": f"Größe {GROESSE_TEXT.get(a.get('groesse') or '', 'ohne')}",
+        "ergebnis": "Ergebnis gespeichert",
     }
     geaendert = res.get("geaendert") or []
     print("Geändert: " + (", ".join(texte.get(g, g) for g in geaendert) or "nichts") + ".")
@@ -533,17 +587,25 @@ def cmd_erledigt(args: list[str]) -> None:
     titel = _wert(args, "--titel")
     groesse = _groesse(_wert(args, "--groesse"))
     notiz = _wert(args, "--notiz")
+    ergebnis = _ergebnis(_wert(args, "--ergebnis"))
     _rest_leer(args)
     if not (titel or "").strip():
         _falsch("erledigt braucht --titel.")
     if groesse is None:
         _falsch("erledigt braucht --groesse klein, mittel oder gross.")
+    _ergebnis_pflicht(ergebnis)
     body = {"titel": titel.strip(), "groesse": groesse, "erledigt": True}
     if notiz is not None:
         if not notiz.strip():
             _falsch("--notiz ist leer.")
         body["beschreibung"] = notiz.strip()
-    res = call(AUFGABEN, body, plain_errors=True)
+    if ergebnis is not None:
+        body["ergebnis"] = ergebnis
+    try:
+        res = call(AUFGABEN, body, plain_errors=True)
+    except SystemExit as e:
+        _ergebnis_meldung(e)
+        raise
     a = res.get("aufgabe") or {}
     print(f"Eingetragen ({GROESSE_TEXT[groesse]}): " + _zeile(a))
     if a.get("link"):

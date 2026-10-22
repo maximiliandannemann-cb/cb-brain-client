@@ -37,6 +37,7 @@ Nur, was in dieser Sitzung wirklich offen geblieben ist: eine Zusage der Person 
 ## Grenzen
 
 - Kein Ja, keine Aufgabe. Schweigen oder ein Themenwechsel ist kein Ja.
+- `/offen` setzt nichts erledigt. Ist ein Punkt schon erledigt, gilt `/erledigt`: mit einem Satz Ergebnis und Beleg-Link, erst nach Ja.
 - `/offen` verschiebt keine Fristen. Will die Person die Frist einer vorhandenen Aufgabe ändern, gilt `/aufgaben`: erst nach einem Satz Grund fragen, dann `--grund` mit ihren Worten.
 - Namen für `--fuer` gehen als eindeutige Kurzform ab drei Zeichen. Endet die Ausgabe mit „Möglich: <Namen>“, nachfragen, nicht raten.
 - Ton: kurz, deutsch, ohne Erklärung der Regeln.
