@@ -53,16 +53,16 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    Meilenstein oder Wareneingang melden. Ohne --ausfuehren nur Vorschau (nichts
                                    geschrieben); mit --ausfuehren eintragen, nur nach Ja der Person. Hilfe: --help
 
-Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--offen-fuer ich|<name>] [--art <art>|fakten]
+Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <art>|fakten]
                           [--ref PO-032|CB-123|IN-…|J-12] [--bereich <b>] [--limit <n>]
-          cbtool.py journal --quittieren J-1234     offene Übergabe oder Zusage als gesehen markieren
           cbtool.py journal-neu --art ereignis|entscheidung|zusage|uebergabe --text <satz> --beleg <satz>
-                          [--ref <nummer>] [--ref-art mail|sonstiges|…] [--fuer <name>] [--faellig YYYY-MM-DD]
+                          [--ref <nummer>] [--ref-art mail|sonstiges|…] [--faellig YYYY-MM-DD]
                           [--bereich supply_chain|sales|finanzen|team|allgemein|privat] [--passiert YYYY-MM-DDTHH:MM]
-          Was ohne Buchung passiert ist (Mail, Entscheidung, Zusage, Übergabe), eine Zeile je Handlung mit Beleg. Lesen
-          zeigt dazu die Fakten aus dem Tool (Stationen, Termine, Bewegungen, Aufgaben-Wechsel). Aufgaben-Ereignisse
-          schreibt das Tool selbst, nie von Hand. Übergabe: --fuer Pflicht, bleibt offen bis quittiert. Zusage:
-          --faellig Pflicht. Ein wiederholter Befehl schreibt nicht doppelt (Schlüssel aus dem Inhalt und dem Tag).
+          Reine Historie: was ohne Buchung passiert ist (Mail, Entscheidung, Zusage, Übergabe), eine Zeile je Handlung
+          mit Beleg. Lesen zeigt dazu die Fakten aus dem Tool (Stationen, Termine, Bewegungen, Aufgaben-Wechsel).
+          Offenes lebt nur in Aufgaben: eine Übergabe ist eine Aufgabe (aufgabe-neu) plus journal-neu --art uebergabe
+          --ref CB-123. Aufgaben-Ereignisse schreibt das Tool selbst, nie von Hand. Zusage: --faellig Pflicht. Ein
+          wiederholter Befehl schreibt nicht doppelt (Schlüssel aus dem Inhalt und dem Tag).
 
 Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
           cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
@@ -1393,26 +1393,22 @@ def _zeit_kurz(wert: str | None) -> str:
 
 
 def _journal_zeile(e: dict) -> str:
-    """J-1234 · 29.10. 14:12 · Silver · uebergabe › Maxi · Text · (Beleg) — Fakten ohne Nummer, mit ihrer Quelle als Art."""
+    """J-1234 · 29.10. 14:12 · Silver · uebergabe · Text · CB-460 · (Beleg) — Fakten ohne Nummer, mit ihrer Quelle als Art."""
     teile = [e["nr"]] if e.get("nr") else []
     teile.append(_zeit_kurz(e.get("passiertAm")))
     teile.append(e.get("von") or "?")
     art = e.get("art") or "?"
-    if e.get("fuer"):
-        art += f" › {e['fuer']}"
     if e.get("faelligAm"):
         art += f" bis {_datum_text(e['faelligAm'])}"
     teile.append(art)
     teile.append(e.get("text") or "")
+    if e.get("art") == "uebergabe" and e.get("ref"):
+        teile.append(e["ref"])
     zeile = " · ".join(teile)
     if e.get("beleg") and e.get("quelle") == "journal" and e.get("kanal") != "trigger":
         zeile += f" · ({e['beleg']})"
     elif e.get("beleg") and e.get("kanal") == "schluessel":
         zeile += f" · (Beleg: {e['beleg']})"
-    if e.get("offen"):
-        zeile += " · OFFEN"
-    elif e.get("quittiertAm"):
-        zeile += f" · quittiert {_zeit_kurz(e['quittiertAm'])} von {e.get('quittiertVon') or '?'}"
     return zeile
 
 
@@ -1427,20 +1423,9 @@ def _journal_call(pfad: str, body=None, method: str = "POST") -> dict:
 
 
 def cmd_journal(args: list[str]) -> None:
-    """Journal lesen (GET /journal) oder eine Zeile quittieren (--quittieren J-1234)."""
-    quitt = _wert(args, "--quittieren")
-    if quitt is not None:
-        _rest_leer(args)
-        nr = quitt.strip().upper()
-        if not re.match(r"^J?-?\d+$", nr):
-            _falsch(f"--quittieren erwartet eine Journal-Nummer (J-1234), nicht „{quitt}“.")
-        nr = "J-" + nr.lstrip("J-")
-        res = _journal_call(f"{JOURNAL}/{urllib.parse.quote(nr)}/quittieren", None)
-        e = res.get("eintrag") or {}
-        print(("Schon quittiert: " if res.get("wiederholt") else "Quittiert: ") + _journal_zeile(e))
-        return
+    """Journal lesen (GET /journal). Reine Historie; Offenes steht in den Aufgaben (aufgaben)."""
     q = {}
-    for opt, feld in (("--seit", "seit"), ("--von", "von"), ("--offen-fuer", "offen_fuer"), ("--ref", "ref"), ("--limit", "limit")):
+    for opt, feld in (("--seit", "seit"), ("--von", "von"), ("--ref", "ref"), ("--limit", "limit")):
         w = _wert(args, opt)
         if w is not None:
             q[feld] = w.strip()
@@ -1458,18 +1443,12 @@ def cmd_journal(args: list[str]) -> None:
     pfad = JOURNAL + ("?" + urllib.parse.urlencode(q) if q else "")
     res = _journal_call(pfad, method="GET")
     eintraege = res.get("eintraege") or []
-    if "offen_fuer" in q:
-        kopf = f"Offen für {q['offen_fuer']}: {len(eintraege)}"
-    else:
-        seit = (res.get("stand") or {}).get("seit")
-        kopf = f"Journal seit {_zeit_kurz(seit)}: {len(eintraege)} Einträge" if seit else f"Journal: {len(eintraege)} Einträge"
-    print(kopf)
+    seit = (res.get("stand") or {}).get("seit")
+    print(f"Journal seit {_zeit_kurz(seit)}: {len(eintraege)} Einträge" if seit else f"Journal: {len(eintraege)} Einträge")
     for e in eintraege:
         print(_journal_zeile(e))
     if res.get("hinweis"):
         print(res["hinweis"])
-    if "offen_fuer" in q and eintraege:
-        print("Gesehen? journal --quittieren <J-Nr> (nur, was wirklich gesehen ist).")
 
 
 def cmd_journal_neu(args: list[str]) -> None:
@@ -1479,7 +1458,6 @@ def cmd_journal_neu(args: list[str]) -> None:
     beleg_roh = _wert(args, "--beleg")
     ref = _wert(args, "--ref")
     ref_art = _wahl(_wert(args, "--ref-art"), "--ref-art", JOURNAL_REF_ARTEN)
-    fuer = _wert(args, "--fuer")
     faellig = _wert(args, "--faellig")
     bereich = _wahl(_wert(args, "--bereich"), "--bereich", JOURNAL_BEREICHE)
     passiert = _wert(args, "--passiert")
@@ -1494,8 +1472,8 @@ def cmd_journal_neu(args: list[str]) -> None:
     if art == "ereignis" and re.match(r"^aufgabe\s+cb-?\d", text, re.IGNORECASE):
         _falsch("Aufgaben-Ereignisse schreibt das Tool selbst (Trigger). Für Zusatzinfo: aufgabe-aendern CB-123 --notiz \"…\".")
     beleg = _beleg(beleg_roh)
-    if art == "uebergabe" and not fuer:
-        _falsch("Eine Übergabe braucht --fuer: an wen sie geht (z. B. Max oder Silver).")
+    if art == "uebergabe" and not (ref and re.match(r"^(cb-?)?\d+$", ref.strip(), re.IGNORECASE)):
+        _falsch("Eine Übergabe zeigt auf die Aufgabe, die die Arbeit trägt: erst aufgabe-neu (für Max „Mac: …“), dann --ref CB-123. Offenes lebt nur in Aufgaben.")
     if art == "zusage" and not faellig:
         _falsch("Eine Zusage braucht --faellig YYYY-MM-DD: bis wann sie gilt.")
     if faellig is not None:
@@ -1509,7 +1487,7 @@ def cmd_journal_neu(args: list[str]) -> None:
     if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
         _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
     body = {"art": art, "text": text, "beleg": beleg}
-    for feld, wert in (("ref", ref and ref.strip()), ("ref_art", ref_art), ("offen_fuer", fuer and fuer.strip()), ("faellig_am", faellig), ("bereich", bereich), ("passiert_am", passiert and passiert.strip())):
+    for feld, wert in (("ref", ref and ref.strip()), ("ref_art", ref_art), ("faellig_am", faellig), ("bereich", bereich), ("passiert_am", passiert and passiert.strip())):
         if wert:
             body[feld] = wert
     # Schlüssel aus dem Inhalt und dem Berliner Tag: derselbe Befehl am selben Tag ist dieselbe Zeile.
