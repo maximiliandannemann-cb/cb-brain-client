@@ -17,7 +17,7 @@ Python 3.9 oder neuer, also alles, was macOS ab Werk mitbringt. Prüfen mit `pyt
 
 3. In Claude Code: `/wiki-setup <schlüssel>`.
 
-Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/offen` legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz, `/kasse` zeigt die Kaffeekasse und meldet Zahlungen, `/erledigt` trägt abgeschlossene Arbeit für die Bruno-Punkte ein (nur nach Ja). Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
+Danach: `/drop <Text>` wirft ins Wiki, `/wiki <Frage>` fragt es, `/wiki-extract` schlägt vor, was aus deinem Vault ins Wiki gehört. `/aufgaben` arbeitet die eigenen Aufgaben aus dem Tool ab, `/offen` legt am Ende einer Sitzung offene Punkte als Aufgaben an (nur nach Ja), `/ware` liest Bestellungen, Sendungen, Bestand, Bestellplanung und Absatz und verschiebt den bestätigten Termin einer PO (nur nach Ja), `/kasse` zeigt die Kaffeekasse und meldet Zahlungen, `/erledigt` trägt abgeschlossene Arbeit für die Bruno-Punkte ein (nur nach Ja). Jede Frage bekommt automatisch Wiki-Treffer als Kontext.
 
 ## Aufgaben (ab v0.2.0)
 
@@ -45,7 +45,7 @@ Der Kontext-Hook zeigt Mo bis Fr höchstens einmal je Stunde den Satz des Tools,
 
 ## Ware (ab v0.3.0)
 
-`/ware` liest aus dem Tool, was zur Ware gehört: Bestellungen und ihr Stand („Wo steht PO-049?“), Sendungen zu Amazon, Bestand je Produkt (FBA, Lager, unterwegs), die Bestellplanung und den Absatz auf Amazon und in den Shops. Nur lesen, dieselben Zahlen wie im Tool. Reichweite und Prognose bleiben im Tool (Bestandsprognose), Finanzen (EK, Zahlungen, Cashflow) gibt es über Claude nicht. Derselbe Schlüssel, keine weitere Einrichtung.
+`/ware` liest aus dem Tool, was zur Ware gehört: Bestellungen und ihr Stand („Wo steht PO-049?“), Sendungen zu Amazon, Bestand je Produkt (FBA, Lager, unterwegs), die Bestellplanung und den Absatz auf Amazon und in den Shops. Dieselben Zahlen wie im Tool. Schreiben kann `/ware` nur eines: den bestätigten Termin einer offenen PO verschieben (`bestellung-eta`), mit Grund und nur nach Ja der Person; der Eintrag steht im Verlauf der PO, markiert „über cbtool“. Reichweite und Prognose bleiben im Tool (Bestandsprognose), Finanzen (EK, Zahlungen, Cashflow) gibt es über Claude nicht. Derselbe Schlüssel, keine weitere Einrichtung.
 
 ## Wenn der Wiki-Kontext fehlt
 
