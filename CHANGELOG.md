@@ -7,6 +7,7 @@
 - Neu bei Aufgaben: `aufgabe-aendern CB-123 --wartet-auf <wer>` und `--wartet-weg`, `aufgaben --status wartet`. `aufgaben` (Standard `offen`) zeigt seitdem nur, was bei uns liegt; Zeilen nennen „wartet auf X seit …, nachfassen …“.
 - `bestellung-eta` zeigt jetzt zuerst die Vorschau des Tools (`vorschau: true`, nichts geschrieben); eingetragen wird mit `--ausfuehren`, nur nach Ja. Ein Tool ohne Vorschau sagt das klar.
 - `bestellung-meilenstein --ausfuehren` holt erst die Vorschau und bildet den Idempotenz-Schlüssel aus der vollen Nummer der Antwort: „PO-032“ und die volle Nummer sind dieselbe Meldung.
+- `/erledigt` und `/offen` prüfen Dubletten mit `--status alle`, damit wartende und erledigte Aufgaben nicht übersehen werden.
 - `/ware`: Abschnitt „Meilenstein und Wareneingang melden“. `/aufgaben`: „Liegt bei jemand anderem“.
 - Prüfskripte `tests/pruefe-meilenstein.py` und `tests/pruefe-wartet.py`.
 - Braucht das Tool mit den Migrationen `2026-10-29-agenten-tueren.sql` und `2026-10-29-aufgaben-wartet.sql` (company-interface, Branch `lauf/agenten-tueren`). Davor sagt der Befehl „noch nicht freigeschaltet“ bzw. „gibt es im Tool noch nicht“ und schreibt nichts.

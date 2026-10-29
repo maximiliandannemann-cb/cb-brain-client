@@ -37,7 +37,7 @@ Ohne Ergebnis wird nichts erledigt; das Tool und das Skript lehnen es ab („Erg
 
 Ja heißt auch „passt“, „mach“, „trag ein“. Schweigen oder ein Themenwechsel ist kein Ja.
 
-1. Dublette prüfen: `aufgaben --suche "<stichwort>"`. Gibt es eine offene eigene Aufgabe dazu, diese erledigt setzen statt neu anlegen: `aufgabe-aendern CB-123 --erledigt --groesse <größe> --ergebnis "<satz mit link>"` (CB-Nummer wörtlich).
+1. Dublette prüfen: `aufgaben --suche "<stichwort>" --status alle`. Gibt es eine offene oder wartende eigene Aufgabe dazu (eine erledigte nicht noch einmal eintragen), diese erledigt setzen statt neu anlegen: `aufgabe-aendern CB-123 --erledigt --groesse <größe> --ergebnis "<satz mit link>"` (CB-Nummer wörtlich).
 2. Sonst: `erledigt --titel "<titel>" --groesse klein|mittel|gross --ergebnis "<satz mit link>"`. `--notiz` nur für Kontext, der nicht ins Ergebnis gehört.
 3. Antwortet das Skript „Ergebnis fehlt: …“: die Person nach dem Ergebnis fragen, nicht selbst eins erfinden, und den Aufruf mit `--ergebnis` wiederholen.
 4. In einem Satz wiedergeben, mit der CB-Nummer aus der Ausgabe.
