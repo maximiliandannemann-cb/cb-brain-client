@@ -34,6 +34,7 @@ Eine Zeile je Handlung mit Außenwirkung: Mail verschickt oder Entwurf angelegt,
 - `uebergabe` braucht `--fuer` (bleibt offen, bis der Empfänger quittiert); `zusage` braucht `--faellig`.
 - `--ref` mit der Nummer, wo es eine gibt (PO, CB, IN, J); Mail-Threads mit `--ref <thread-id> --ref-art mail`.
 - `--bereich` (Standard `allgemein`): `supply_chain`, `sales`, `finanzen`, `team`, `privat`. Finanzen sieht Silver nicht.
+- Alles zu Geld, Kasse, Belegen, Rechnungen, Zahlungen oder Gehalt immer mit `--bereich finanzen`.
 - **Nie von Hand:** Aufgaben-Ereignisse (angelegt, erledigt, zugewiesen, Frist, wartet) schreibt das Tool selbst; Stationen, Termine, Wareneingänge stehen über ihre Buchung im Journal. Zusatzinfo zu einer Aufgabe ist eine Notiz (`aufgabe-aendern CB-123 --notiz`). Freigaben (`freigabe`) schreibt nur eine Tür des Tools.
 - Ein wiederholter Befehl am selben Tag schreibt nicht doppelt („Schon eingetragen“).
 

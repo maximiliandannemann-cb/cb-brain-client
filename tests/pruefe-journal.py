@@ -93,6 +93,9 @@ pruefe("Trigger-Zeile ohne Beleg-Wiederholung", zeilen[2] == "J-1235 · 28.10. 0
 pruefe("Fakt ohne Nummer, Quelle als Art", zeilen[3] == "28.10. 09:00 · Mats · station · Station Produktion fertig PO-040 1.000 St. am 27.10.2026")
 code, out, a = lauf("journal", ["--seit", "12h", "--von", "Silver", "--art", "Fakten", "--ref", "PO-032", "--bereich", "team", "--limit", "20"])
 pruefe("Parameter wörtlich durchgereicht (art klein)", query(a) == {"seit": "12h", "von": "Silver", "art": "fakten", "ref": "PO-032", "bereich": "team", "limit": "20"})
+for seit in ("2026-10-29T17:52:29Z", "2026-10-29T17:52", "2026-10-29T17:52:29+01:00", "2026-10-29"):
+    code, out, a = lauf("journal", ["--seit", seit])
+    pruefe(f"--seit {seit} angenommen (uebergabe.py schickt Zeitpunkte mit Z)", code == 0 and a is not None and query(a) == {"seit": seit})
 antwort["json"] = {"eintraege": [UEB], "stand": {"abgerufen": "2026-10-29T09:00:00Z", "seit": None}}
 code, out, a = lauf("journal", ["--offen-fuer", "ich"])
 pruefe("offen für mich: Parameter, Kopf, Hinweis aufs Quittieren", query(a) == {"offen_fuer": "ich"} and out.startswith("Offen für ich: 1") and "journal --quittieren" in out)
@@ -107,6 +110,7 @@ code, out, a = lauf("journal", ["--quittieren", "J-1234"])
 pruefe("quittieren: schon quittiert", out.startswith("Schon quittiert: J-1234"))
 for name, args, text in [
     ("--seit falsch", ["--seit", "gestern"], "--seit erwartet"),
+    ("--seit Zone falsch", ["--seit", "2026-10-29T17:52:29CET"], "--seit erwartet"),
     ("--art falsch", ["--art", "quittung"], "--art erwartet"),
     ("--bereich falsch", ["--bereich", "geheim"], "--bereich erwartet"),
     ("--limit 0", ["--limit", "0"], "--limit erwartet"),

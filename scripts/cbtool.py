@@ -1453,8 +1453,8 @@ def cmd_journal(args: list[str]) -> None:
     _rest_leer(args)
     if "limit" in q:
         _zahl(q["limit"], "--limit", 1, 200)
-    if "seit" in q and not re.match(r"^(\d{1,4}[dhDH]|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?)$", q["seit"]):
-        _falsch(f"--seit erwartet 2d, 12h, YYYY-MM-DD oder YYYY-MM-DDTHH:MM, nicht „{q['seit']}“.")
+    if "seit" in q and not re.match(r"^(\d{1,4}[dhDH]|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?)?)$", q["seit"]):
+        _falsch(f"--seit erwartet 2d, 12h, YYYY-MM-DD oder YYYY-MM-DDTHH:MM[:SS][Z|+01:00], nicht „{q['seit']}“.")
     pfad = JOURNAL + ("?" + urllib.parse.urlencode(q) if q else "")
     res = _journal_call(pfad, method="GET")
     eintraege = res.get("eintraege") or []
