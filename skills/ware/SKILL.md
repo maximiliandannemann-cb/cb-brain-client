@@ -19,7 +19,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Wann muss die nächste Bestellung raus? | `bestellplanung`, `--status faellig` (nächste 4 Wochen) oder `ueberfaellig`, `--marktplatz DE\|US`, `--suche` |
 | Wie lief Produkt X? | `absatz --suche <SKU oder Name>`, Zeitraum `--von/--bis YYYY-MM-DD` (Standard 30 Tage bis gestern, höchstens 400), `--kanal amazon\|shop`, `--je tag\|woche` für den Verlauf |
 
-| Termin einer PO verschieben (nur nach Ja) | `bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]` |
+| Termin einer PO verschieben (nur nach Ja) | `bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]`, erst ohne, dann mit `--ausfuehren` |
 | Meilenstein oder Wareneingang melden (nur nach Ja) | `bestellung-meilenstein PO-032 --schritt fertig\|konfektionierer-eingang\|konfektionierer-versand\|eingang --datum YYYY-MM-DD --menge <n> --beleg "<satz>"`, erst ohne, dann mit `--ausfuehren` |
 
 Relative Zeiträume („letzte Woche“, „seit August“) vom heutigen Datum aus in `--von/--bis` umrechnen und den Zeitraum in der Antwort nennen.
@@ -38,7 +38,7 @@ Eine neue Ankunft steht in einer Mail, einer Nachricht oder die Person sagt sie.
 
 1. Erst lesen: `bestellung <nr>` für jede betroffene PO. Alten Termin, „ETA bestätigt“ und die Sendung nennen.
 2. Vorschlag zeigen, nichts schreiben: je PO alter Termin › neuer Termin, Grund und Quelle. Beispiel: „PO-020-1-1-B-22-LS-SET: 04.12.2026 › 20.11.2026. Grund: CIS (Pia) meldet am 29.10. Ankunft Regensburg etwa 20.11. Quelle: Mail von Pia, 29.10. Eintragen?“
-3. Erst nach einem ausdrücklichen Ja `bestellung-eta` aufrufen. „Klingt gut“ zu etwas anderem ist kein Ja. Ein Ja gilt für die gezeigten POs und Termine, nicht für weitere.
+3. Vorschau: `bestellung-eta …` ohne `--ausfuehren` (das Tool prüft und schreibt nichts). Erst nach einem ausdrücklichen Ja denselben Befehl mit `--ausfuehren`. „Klingt gut“ zu etwas anderem ist kein Ja. Ein Ja gilt für die gezeigten POs und Termine, nicht für weitere.
 4. Grund: wörtlich von der Person, oder ein Satz aus der Quelle, den die Person mit ihrem Ja bestätigt hat. Nie selbst einen Grund erfinden oder ausschmücken. Ohne Grund nicht aufrufen, sondern fragen.
 5. Quelle: Link zur Mail oder Nachricht, wenn es einen gibt (Mail über die Composio-CLI mit dem Konto der Sitzung suchen). Keinen Link erfinden; ohne Link geht es ohne `--quelle`.
 6. Nach dem Aufruf die Ausgabe weitergeben: alter und neuer Termin, Link. Nennt sie „Termin gilt auch für …“, das der Person sagen: die POs reisen in derselben Sendung, ihre Ankunft hat sich mitverschoben, der Verlaufseintrag steht nur an der genannten PO.

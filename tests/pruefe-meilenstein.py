@@ -72,7 +72,7 @@ def lauf(args):
             puffer.write(str(e.code))
     finally:
         sys.stdout, sys.stderr = alt_out, alt_err
-    return code, puffer.getvalue(), (anfragen[0] if anfragen else None)
+    return code, puffer.getvalue(), (anfragen[-1] if anfragen else None)
 
 
 EIN = ["PO-032", "--schritt", "eingang", "--datum", "2026-10-27", "--menge", "1806", "--beleg", BELEG]
@@ -82,16 +82,17 @@ code, out, a = lauf(EIN)
 pruefe("Vorschau: Exit 0", code == 0)
 pruefe("Vorschau: POST an /api/brain-read/bestellungen/PO-032/schritt", a and a["methode"] == "POST" and a["url"].endswith("/api/brain-read/bestellungen/PO-032/schritt"))
 pruefe("Vorschau: vorschau true", a and a["body"]["vorschau"] is True)
-pruefe("Vorschau: Body", a and {k: v for k, v in a["body"].items() if k not in ("vorschau", "idempotenz_schluessel")} == {"schritt": "eingang", "datum": "2026-10-27", "beleg": BELEG, "menge": 1806})
-schluessel = a["body"]["idempotenz_schluessel"] if a else ""
-pruefe("Vorschau: Schlüssel aus dem Inhalt", schluessel.startswith("cbtool-") and len(schluessel) == 47)
+pruefe("Vorschau: Body ohne Schlüssel, eine Anfrage", a and len(anfragen) == 1 and a["body"] == {"schritt": "eingang", "datum": "2026-10-27", "beleg": BELEG, "menge": 1806, "vorschau": True})
 pruefe("Vorschau: klar als Vorschau, Hinweis auf --ausfuehren", "Vorschau, nichts geschrieben" in out and "--ausfuehren" in out)
 pruefe("Vorschau: Status, Eingang, bestandswirksam, Beleg, Link", "Status: eta_confirmed › received" in out and "Amazon FBA (direkt), bestandswirksam nein" in out and "2-M-TK-120: +1806" in out and f"Beleg: {BELEG}" in out and "Link: https://" in out)
 
 # Mit --ausfuehren: gleicher Schlüssel (Wiederholung bucht nicht doppelt), vorschau false.
 antwort["json"] = {"aenderung": {**AENDERUNG, "vorschau": False}}
 code, out, a = lauf(EIN + ["--ausfuehren"])
-pruefe("Ausführen: vorschau false, derselbe Schlüssel wie die Vorschau", a and a["body"]["vorschau"] is False and a["body"]["idempotenz_schluessel"] == schluessel)
+schluessel = a["body"]["idempotenz_schluessel"] if a else ""
+pruefe("Ausführen: erst Vorschau, dann Schreiben mit Schlüssel aus dem Inhalt", len(anfragen) == 2 and anfragen[0]["body"]["vorschau"] is True and a["body"]["vorschau"] is False and schluessel.startswith("cbtool-") and len(schluessel) == 47)
+code, out, a4 = lauf(["PO-032-1-2-M-TK-120"] + EIN[1:] + ["--ausfuehren"])
+pruefe("PO-032 und die volle Nummer: derselbe Schlüssel (aus aenderung.po der Vorschau)", a4 and a4["body"]["idempotenz_schluessel"] == schluessel)
 pruefe("Ausführen: Eingetragen", code == 0 and out.startswith("Eingetragen: PO-032-1-2-M-TK-120 · Im Lager angekommen am 27.10.2026"))
 code, out, a2 = lauf(["po-032", "--beleg", f"  {BELEG}\n", "--ausfuehren", "--menge", "1806", "--datum", "2026-10-27", "--schritt", "Eingang"])
 pruefe("Wiederholung mit anderer Schreibweise: derselbe Schlüssel", a2 and a2["body"]["idempotenz_schluessel"] == schluessel)
@@ -102,7 +103,7 @@ code, out, a = lauf(EIN + ["--ausfuehren"])
 pruefe("wiederholt: Schon eingetragen, nichts neu", code == 0 and "Schon eingetragen" in out and "Nichts neu geschrieben" in out)
 antwort["json"] = {"aenderung": AENDERUNG}
 code, out, a = lauf(EIN + ["--schluessel", "silver-0001-abc", "--ausfuehren"])
-pruefe("eigener --schluessel geht durch", a and a["body"]["idempotenz_schluessel"] == "silver-0001-abc")
+pruefe("eigener --schluessel geht durch, eine Anfrage", a and len(anfragen) == 1 and a["body"]["idempotenz_schluessel"] == "silver-0001-abc")
 
 # Mehrere Positionen, Station.
 code, out, a = lauf(["PO-041", "--schritt", "eingang", "--datum", "2026-10-27", "--position", "A-1=20", "--position", "B-1=50", "--standort", "hesterhoff", "--beleg", BELEG])

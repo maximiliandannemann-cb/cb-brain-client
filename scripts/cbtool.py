@@ -41,8 +41,9 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
                            [--kanal amazon|shop|alle] [--je produkt|tag|woche]
           Lesen. Limit 1-200 (Standard 50, bestand 200). Bis drei Treffer: mit Einzelheiten und Link.
-          cbtool.py bestellung-eta PO-020 --eta YYYY-MM-DD --grund <satz> [--quelle <link>]
-                                   bestätigten Termin einer offenen PO verschieben (nur nach Ja der Person)
+          cbtool.py bestellung-eta PO-020 --eta YYYY-MM-DD --grund <satz> [--quelle <link>] [--ausfuehren]
+                                   bestätigten Termin einer offenen PO verschieben; ohne --ausfuehren nur Vorschau,
+                                   mit --ausfuehren eintragen (nur nach Ja der Person)
           --grund: ein Satz (1-300 Zeichen), warum sich der Termin ändert, wörtlich von der Person oder aus der
           Quelle mit ihrem Ja. --quelle: Beleg in einer Zeile, z. B. Mail-Link. Nur der Termin ändert sich; die
           PO braucht schon einen bestätigten Termin (den ersten trägt man im Tool mit der AB ein).
@@ -893,7 +894,9 @@ def _heute_berlin() -> str:
 
 
 def cmd_bestellung_eta(args: list[str]) -> None:
-    """Bestätigten Termin einer offenen PO verschieben (POST /bestellungen/<nr>/eta). Nur nach Ja der Person."""
+    """Bestätigten Termin einer offenen PO verschieben (POST /bestellungen/<nr>/eta). Standard: Vorschau (vorschau: true,
+    nichts geschrieben); --ausfuehren schreibt, nur nach Ja der Person."""
+    ausfuehren = _schalter(args, "--ausfuehren")
     eta = _wert(args, "--eta")
     grund_roh = _wert(args, "--grund")
     quelle = _wert(args, "--quelle")
@@ -916,18 +919,28 @@ def cmd_bestellung_eta(args: list[str]) -> None:
         if len(q) > QUELLE_MAX:
             _falsch(f"--quelle darf höchstens {QUELLE_MAX} Zeichen lang sein.")
         body["quelle"] = q
+    if not ausfuehren:
+        body["vorschau"] = True
     try:
         res = call(f"{LESEN}/bestellungen/{nr}/eta", body, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
     except SystemExit as e:
         text = str(e.code)
         if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool), keine Meldung des Tools
             raise SystemExit("ETA ändern gibt es im Tool noch nicht. Bitte im Tool eintragen (Bestellung › Was ist passiert? › Termin verschoben).")
+        if "Unbekannt: vorschau" in text:  # Tool ohne Vorschau (vor den Agenten-Türen)
+            raise SystemExit("Das Tool kennt die Vorschau für den Termin noch nicht. Mit --ausfuehren direkt eintragen, nur nach Ja der Person.")
         if ETA_GRUND_FEHLT in text:
             raise SystemExit(f"Nicht geändert: {ETA_GRUND_FEHLT}\nDie Person nach einem Satz Grund fragen und erneut mit --grund \"<satz>\" aufrufen.")
         raise SystemExit(f"Nicht geändert: {text}")
     a = res.get("aenderung") or {}
     alt, neu = _datum_text(a.get("alt"), voll=True), _datum_text(a.get("neu"), voll=True)
-    if a.get("geaendert"):
+    if a.get("vorschau") and a.get("geaendert"):
+        print(f"Vorschau, nichts geschrieben: {a.get('po')} {alt} › {neu} (bestätigter Termin).")
+        print(f"Grund: {a.get('grund')}")
+        if a.get("quelle"):
+            print(f"Quelle: {a['quelle']}")
+        print("Zum Eintragen denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person.")
+    elif a.get("geaendert"):
         print(f"Termin verschoben: {a.get('po')} {alt} › {neu} (bestätigter Termin, über cbtool).")
         print(f"Grund: {a.get('grund')}")
         if a.get("quelle"):
@@ -1036,15 +1049,25 @@ def cmd_bestellung_meilenstein(args: list[str]) -> None:
         body["positionen"] = positionen
     if standort is not None:
         body["standort"] = standort.strip()
-    body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "bestellung_schritt", "po": urllib.parse.unquote(nr).upper(), **body})
-    body["vorschau"] = not ausfuehren
-    try:
-        res = call(f"{LESEN}/bestellungen/{nr}/schritt", body, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
-    except SystemExit as e:
-        text = str(e.code)
-        if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool)
-            raise SystemExit("Meilensteine über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool eintragen (Bestellung › Was ist passiert?).")
-        raise SystemExit(f"Nicht eingetragen: {text}")
+    def senden(b: dict) -> dict:
+        try:
+            return call(f"{LESEN}/bestellungen/{nr}/schritt", b, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
+        except SystemExit as e:
+            text = str(e.code)
+            if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool)
+                raise SystemExit("Meilensteine über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool eintragen (Bestellung › Was ist passiert?).")
+            raise SystemExit(f"Nicht eingetragen: {text}")
+
+    if schluessel:
+        res = senden({**body, "idempotenz_schluessel": schluessel, "vorschau": not ausfuehren})
+    else:
+        # Erst die Vorschau: sie löst die Nummer auf („PO-032“ › volle Nummer). Der Schlüssel kommt aus dem Inhalt mit der
+        # vollen Nummer, damit „PO-032“ und die volle Nummer dieselbe Meldung sind (Review 29.10.).
+        res = senden({**body, "vorschau": True})
+        if ausfuehren:
+            po_voll = (res.get("aenderung") or {}).get("po") or urllib.parse.unquote(nr)
+            key = _idempotenz({"tuer": "bestellung_schritt", "po": po_voll, **body})
+            res = senden({**body, "idempotenz_schluessel": key, "vorschau": False})
     a = res.get("aenderung") or {}
     kopf = f"{a.get('po')} · {a.get('schrittText')} am {_datum_text(a.get('datum'), voll=True)}"
     if a.get("wiederholt"):
