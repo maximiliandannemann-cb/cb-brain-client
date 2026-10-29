@@ -54,8 +54,9 @@ def falsches_urlopen(req, timeout=None):
 cb.urllib.request.urlopen = falsches_urlopen
 
 
-def lauf(args):
-    """bestellung-eta ausführen; Rückgabe (Exit-Code, Ausgabe, Anfrage oder None)."""
+def lauf(args, ausfuehren=True):
+    """bestellung-eta ausführen (Standard mit --ausfuehren; ohne ist es die Vorschau); Rückgabe (Exit-Code, Ausgabe, Anfrage oder None)."""
+    args = list(args) + (["--ausfuehren"] if ausfuehren else [])
     anfragen.clear()
     cb.HILFE = "Aufgaben:"
     alt_out, alt_err = sys.stdout, sys.stderr
@@ -88,6 +89,17 @@ antwort["json"] = {"aenderung": {**ANTWORT["aenderung"], "geaendert": False, "al
 code, out, a = lauf(["PO-021", "--eta", "2026-11-20", "--grund", GRUND])
 pruefe("unverändert: klar gesagt", code == 0 and "Unverändert" in out and "steht schon auf 20.11.2026" in out)
 antwort["json"] = ANTWORT
+
+# Vorschau (Standard ohne --ausfuehren, 29.10.): vorschau true im Body, klar als Vorschau ausgegeben.
+antwort["json"] = {"aenderung": {**ANTWORT["aenderung"], "vorschau": True}}
+code, out, a = lauf(["PO-020", "--eta", "2026-11-20", "--grund", GRUND], ausfuehren=False)
+pruefe("Vorschau: vorschau true im Body", code == 0 and a and a["body"] == {"eta": "2026-11-20", "grund": GRUND, "vorschau": True})
+pruefe("Vorschau: nichts geschrieben, Hinweis auf --ausfuehren", "Vorschau, nichts geschrieben" in out and "--ausfuehren" in out)
+antwort["json"] = ANTWORT
+antwort.update(status=400, json={"error": "Über den Schlüssel ändert sich nur der Termin. Unbekannt: vorschau. Erlaubt: eta, grund, quelle."})
+code, out, a = lauf(["PO-020", "--eta", "2026-11-20", "--grund", GRUND], ausfuehren=False)
+pruefe("Vorschau an altem Tool: klarer Satz", code != 0 and "kennt die Vorschau" in out)
+antwort.update(status=200, json=ANTWORT)
 
 # Lokale Fehler: nichts wird gesendet.
 for name, args, text in [

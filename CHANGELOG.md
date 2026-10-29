@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 (29.10.2026)
+
+- Neu: `cbtool.py bestellung-meilenstein PO-032 --schritt fertig|konfektionierer-eingang|konfektionierer-versand|eingang --datum YYYY-MM-DD --beleg "<satz>" (--menge <n> | --position SKU=<n> …) [--standort <code>] [--ausfuehren]`. Meldet einen Meilenstein oder Wareneingang so, wie das Fenster „Was ist passiert?“ im Tool bucht. Ohne `--ausfuehren` nur Vorschau: das Tool rechnet die Buchung durch (Status, abgeleitete Stationen, bestandswirksam ja/nein) und schreibt nichts. `--help` zeigt alle Felder.
+- `--beleg` ist Pflicht (10 bis 500 Zeichen). Der Idempotenz-Schlüssel kommt aus dem Inhalt: derselbe Befehl zweimal bucht nie doppelt („Schon eingetragen“). Lokal abgelehnt, ohne zu senden: Datum in der Zukunft, fehlende Menge, `--position` falsch oder doppelt, Beleg zu kurz oder zu lang. Das Tool lehnt ab: Menge größer als offen oder bestellt, angelieferte POs, gleiche Meldung schon erfasst, Konten ohne Recht.
+- Neu bei Aufgaben: `aufgabe-aendern CB-123 --wartet-auf <wer>` und `--wartet-weg`, `aufgaben --status wartet`. `aufgaben` (Standard `offen`) zeigt seitdem nur, was bei uns liegt; Zeilen nennen „wartet auf X seit …, nachfassen …“.
+- `bestellung-eta` zeigt jetzt zuerst die Vorschau des Tools (`vorschau: true`, nichts geschrieben); eingetragen wird mit `--ausfuehren`, nur nach Ja. Ein Tool ohne Vorschau sagt das klar.
+- `bestellung-meilenstein --ausfuehren` holt erst die Vorschau und bildet den Idempotenz-Schlüssel aus der vollen Nummer der Antwort: „PO-032“ und die volle Nummer sind dieselbe Meldung.
+- `/erledigt` und `/offen` prüfen Dubletten mit `--status alle`, damit wartende und erledigte Aufgaben nicht übersehen werden.
+- `/ware`: Abschnitt „Meilenstein und Wareneingang melden“. `/aufgaben`: „Liegt bei jemand anderem“.
+- Prüfskripte `tests/pruefe-meilenstein.py` und `tests/pruefe-wartet.py`.
+- Braucht das Tool mit den Migrationen `2026-10-29-agenten-tueren.sql` und `2026-10-29-aufgaben-wartet.sql` (company-interface, Branch `lauf/agenten-tueren`). Davor sagt der Befehl „noch nicht freigeschaltet“ bzw. „gibt es im Tool noch nicht“ und schreibt nichts.
+
 ## 0.9.0 (29.10.2026)
 
 - Neu: `cbtool.py bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]`. Verschiebt den bestätigten Termin einer offenen Bestellung, als die Person des Schlüssels, so wie „Termin verschoben“ im Tool. PO-Nummer wörtlich oder als eindeutiger Anfang wie bei `bestellung`. Ausgabe: alter und neuer Termin, Grund, Quelle, Link; reisen andere POs in derselben Sendung, nennt sie die Ausgabe.

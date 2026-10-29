@@ -22,7 +22,7 @@ Nur, was in dieser Sitzung wirklich offen geblieben ist: eine Zusage der Person 
 1. Vorschläge sammeln. Je Punkt: **Titel** (kurz; betrifft es ein Produkt, dann „Produkt: Tätigkeit“, z. B. „ImmunVital: Etikett freigeben“), **für wen**, **Frist**.
    - Für wen: immer die Person selbst. Eine Aufgabe für jemand anderen nur, wenn die Person das ausdrücklich so sagt („leg das für Mats an“).
    - Frist: nur, wenn die Person sie in der Sitzung genannt hat („schick ich morgen“ = morgen). Sonst leer lassen und in Schritt 3 fragen. Nie selbst ein Datum wählen.
-2. Für jeden Punkt Dubletten prüfen: `aufgaben --suche "<stichwort>" --fuer alle`. Gibt es schon eine offene Aufgabe dazu, statt Neuanlage eine Notiz an diese Aufgabe vorschlagen (CB-Nummer wörtlich).
+2. Für jeden Punkt Dubletten prüfen: `aufgaben --suche "<stichwort>" --fuer alle --status alle`. Gibt es schon eine offene oder wartende Aufgabe dazu (auch „wartet auf …“), statt Neuanlage eine Notiz an diese Aufgabe vorschlagen (CB-Nummer wörtlich).
 3. Die Liste zeigen, je Punkt eine Zeile, keine Tabelle:
    `1. ImmunVital: Etikett freigeben · Max · bis Fr 16.10.`
    `2. Notiz an CB-123: Angebot von Gechem liegt vor`

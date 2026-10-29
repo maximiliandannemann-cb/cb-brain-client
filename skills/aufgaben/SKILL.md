@@ -11,6 +11,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Jede 
 
 1. `aufgaben` ausführen; für andere Personen `--fuer <Name>` oder `--fuer alle`, für Erledigtes `--status erledigt` (zeigt das Ergebnis unter der Zeile), für ein Stichwort `--suche <text>`.
 2. Die Liste gruppiert zeigen: überfällig, diese Woche, später, ohne Datum. Jede Zeile unverändert, nichts hinzudichten.
+3. `aufgaben` zeigt, was bei uns liegt. Was bei anderen liegt: `aufgaben --status wartet` („wartet auf Lüschow seit …, nachfassen …“). Steht dort „nachfassen fällig“, das zuerst nennen.
 
 ## An einer Aufgabe arbeiten („CB-123“)
 
@@ -21,6 +22,10 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Jede 
 ## Ändern, nur auf Wort der Person
 
 `aufgabe-aendern CB-123` mit `--erledigt` oder `--offen`, `--faellig YYYY-MM-DD` oder `--faellig-weg` (bei bestehender Frist mit `--grund`, siehe unten), `--prio 1-4` (niedrig, mittel, hoch, dringend), `--fuer <Name>` oder `--fuer-weg`, `--groesse klein|mittel|gross` (nur eigene Aufgaben). Nur ändern, was die Person sagt. Relative Daten („Freitag“, „nächste Woche“) vom heutigen Datum aus in YYYY-MM-DD umrechnen und das Datum im Satz nennen („verschoben auf Fr 16.10.“). Die Ausgabe in einem Satz wiedergeben.
+
+### Liegt bei jemand anderem
+
+„Wir warten auf Lüschow“ › `aufgabe-aendern CB-123 --wartet-auf Lüschow`. Liegt es wieder bei uns › `--wartet-weg`. Seit wann und wann nachfassen rechnet das Tool; erledigen leert es.
 
 ### Erledigt setzen: nur mit Ergebnis (Pflicht ab Mo 26.10.2026)
 
