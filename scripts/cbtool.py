@@ -37,7 +37,12 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    [--suche <text>] [--marktplatz DE|US|alle] [--limit <n>]
           cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
                            [--kanal amazon|shop|alle] [--je produkt|tag|woche]
-          Nur lesen. Limit 1-200 (Standard 50, bestand 200). Bis drei Treffer: mit Einzelheiten und Link.
+          Lesen. Limit 1-200 (Standard 50, bestand 200). Bis drei Treffer: mit Einzelheiten und Link.
+          cbtool.py bestellung-eta PO-020 --eta YYYY-MM-DD --grund <satz> [--quelle <link>]
+                                   bestätigten Termin einer offenen PO verschieben (nur nach Ja der Person)
+          --grund: ein Satz (1-300 Zeichen), warum sich der Termin ändert, wörtlich von der Person oder aus der
+          Quelle mit ihrem Ja. --quelle: Beleg in einer Zeile, z. B. Mail-Link. Nur der Termin ändert sich; die
+          PO braucht schon einen bestätigten Termin (den ersten trägt man im Tool mit der AB ein).
 
 Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
           cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
@@ -843,6 +848,63 @@ def cmd_bestellung(args: list[str]) -> None:
     _stand(res)
 
 
+ETA_GRUND_FEHLT = "Bitte kurz begründen, warum der Termin sich ändert."  # Text des Tools (eta-schluessel.ts)
+QUELLE_MAX = 500  # wie im Tool (src/lib/eta-schluessel.ts, QUELLE_MAX)
+
+
+def _heute_berlin() -> str:
+    t = _jetzt()
+    return (t.astimezone(BERLIN) if BERLIN else t.astimezone()).strftime("%Y-%m-%d")
+
+
+def cmd_bestellung_eta(args: list[str]) -> None:
+    """Bestätigten Termin einer offenen PO verschieben (POST /bestellungen/<nr>/eta). Nur nach Ja der Person."""
+    eta = _wert(args, "--eta")
+    grund_roh = _wert(args, "--grund")
+    quelle = _wert(args, "--quelle")
+    nr = _ref(args, "bestellung-eta", "PO-020")
+    if eta is None:
+        _falsch("bestellung-eta braucht --eta YYYY-MM-DD.")
+    _tag_param(eta, "--eta")
+    if grund_roh is None or not grund_roh.strip():
+        _falsch(f"{ETA_GRUND_FEHLT} (--grund \"<satz>\", wörtlich von der Person oder aus der Quelle mit ihrem Ja)")
+    grund = _grund(grund_roh)
+    if eta < _heute_berlin():
+        _falsch(f"Der neue Termin {_datum_text(eta, voll=True)} liegt in der Vergangenheit.")
+    body = {"eta": eta, "grund": grund}
+    if quelle is not None:
+        q = quelle.strip()
+        if not q:
+            _falsch("--quelle ist leer.")
+        if "\n" in q or "\r" in q:
+            _falsch("--quelle ist eine Zeile (Link oder kurzer Verweis).")
+        if len(q) > QUELLE_MAX:
+            _falsch(f"--quelle darf höchstens {QUELLE_MAX} Zeichen lang sein.")
+        body["quelle"] = q
+    try:
+        res = call(f"{LESEN}/bestellungen/{nr}/eta", body, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
+    except SystemExit as e:
+        text = str(e.code)
+        if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool), keine Meldung des Tools
+            raise SystemExit("ETA ändern gibt es im Tool noch nicht. Bitte im Tool eintragen (Bestellung › Was ist passiert? › Termin verschoben).")
+        if ETA_GRUND_FEHLT in text:
+            raise SystemExit(f"Nicht geändert: {ETA_GRUND_FEHLT}\nDie Person nach einem Satz Grund fragen und erneut mit --grund \"<satz>\" aufrufen.")
+        raise SystemExit(f"Nicht geändert: {text}")
+    a = res.get("aenderung") or {}
+    alt, neu = _datum_text(a.get("alt"), voll=True), _datum_text(a.get("neu"), voll=True)
+    if a.get("geaendert"):
+        print(f"Termin verschoben: {a.get('po')} {alt} › {neu} (bestätigter Termin, über cbtool).")
+        print(f"Grund: {a.get('grund')}")
+        if a.get("quelle"):
+            print(f"Quelle: {a['quelle']}")
+    else:
+        print(f"Unverändert: {a.get('po')} steht schon auf {neu}. Nichts geschrieben.")
+    if a.get("auchFuer"):
+        print("Gleiche Sendung, Termin gilt auch für: " + ", ".join(a["auchFuer"]) + " (Verlaufseintrag nur an " + str(a.get("po")) + ")")
+    if a.get("link"):
+        print(f"Link: {a['link']}")
+
+
 # ---- Sendungen
 
 def _sendung_zeile(s: dict) -> str:
@@ -1101,6 +1163,7 @@ def cmd_absatz(args: list[str]) -> None:
 WARE = {
     "bestellungen": cmd_bestellungen,
     "bestellung": cmd_bestellung,
+    "bestellung-eta": cmd_bestellung_eta,
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,

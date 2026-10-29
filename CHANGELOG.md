@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0 (29.10.2026)
+
+- Neu: `cbtool.py bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]`. Verschiebt den bestätigten Termin einer offenen Bestellung, als die Person des Schlüssels, so wie „Termin verschoben“ im Tool. PO-Nummer wörtlich oder als eindeutiger Anfang wie bei `bestellung`. Ausgabe: alter und neuer Termin, Grund, Quelle, Link; reisen andere POs in derselben Sendung, nennt sie die Ausgabe.
+- Nur der Termin ändert sich, nie Status, Mengen, AB-Nummer oder Beträge. `--grund` ist Pflicht (1 bis 300 Zeichen, gezählt wie im Tool), `--quelle` optional (eine Zeile, bis 500 Zeichen). Beides steht im Verlauf der PO, markiert „über cbtool“. Lokal abgelehnt, ohne zu senden: fehlender Grund, falsches Datum, Termin vor dem heutigen Berliner Tag.
+- Das Tool lehnt ab: angelieferte POs, POs ohne bestätigten Termin (der erste Termin kommt im Tool mit der AB) und Konten ohne Recht im Tool. Die Meldung kommt unverändert mit „Nicht geändert:“ davor.
+- `/ware`: neuer Abschnitt „ETA ändern, nur auf Wort der Person“. Erst Vorschlag mit Quelle zeigen, erst nach ausdrücklichem Ja schreiben, Grund wörtlich von der Person oder aus der Quelle mit ihrem Ja, nie erfunden. Der Satz „Nur lesen“ ist entsprechend angepasst, ebenso README und CLAUDE-Abschnitt.
+- Kein `sendung-eta`: Sendungen zu Amazon haben im Tool keine Tür mit Protokoll für den Termin.
+- Prüfskript `tests/pruefe-eta.py` (ohne Framework, ohne Netz, Uhr fest): Body, lokale Fehler, Antworten 200/400/403/404/409/503 des Tools.
+- Braucht das Tool mit der Route `POST /api/brain-read/bestellungen/<nr>/eta` und der Migration `2026-10-29-eta-per-schluessel.sql` (company-interface, Branch `lauf/eta-per-schluessel`). Davor sagt der Befehl „ETA ändern gibt es im Tool noch nicht“ bzw. „noch nicht freigeschaltet“ und schreibt nichts.
+
 ## 0.8.0 (22.10.2026)
 
 - Neu: `--ergebnis "<satz>"` bei `aufgabe-aendern CB-123 --erledigt` und bei `erledigt --titel … --groesse …`. Ein Satz, was herauskam und wo es liegt, mit Link zum Beleg, wo es einen gibt; 10 bis 2000 Zeichen (Umbrüche werden Leerzeichen, gezählt wie im Tool). Grund: Ab Mo 26.10.2026 00:00 Berlin wird im Tool keine Aufgabe ohne Ergebnis erledigt, auf keinem Weg (Tool-Issue #437).
