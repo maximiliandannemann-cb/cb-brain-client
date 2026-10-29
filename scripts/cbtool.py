@@ -53,6 +53,17 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    Meilenstein oder Wareneingang melden. Ohne --ausfuehren nur Vorschau (nichts
                                    geschrieben); mit --ausfuehren eintragen, nur nach Ja der Person. Hilfe: --help
 
+Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--offen-fuer ich|<name>] [--art <art>|fakten]
+                          [--ref PO-032|CB-123|IN-…|J-12] [--bereich <b>] [--limit <n>]
+          cbtool.py journal --quittieren J-1234     offene Übergabe oder Zusage als gesehen markieren
+          cbtool.py journal-neu --art ereignis|entscheidung|zusage|uebergabe --text <satz> --beleg <satz>
+                          [--ref <nummer>] [--ref-art mail|sonstiges|…] [--fuer <name>] [--faellig YYYY-MM-DD]
+                          [--bereich supply_chain|sales|finanzen|team|allgemein|privat] [--passiert YYYY-MM-DDTHH:MM]
+          Was ohne Buchung passiert ist (Mail, Entscheidung, Zusage, Übergabe), eine Zeile je Handlung mit Beleg. Lesen
+          zeigt dazu die Fakten aus dem Tool (Stationen, Termine, Bewegungen, Aufgaben-Wechsel). Aufgaben-Ereignisse
+          schreibt das Tool selbst, nie von Hand. Übergabe: --fuer Pflicht, bleibt offen bis quittiert. Zusage:
+          --faellig Pflicht. Ein wiederholter Befehl schreibt nicht doppelt (Schlüssel aus dem Inhalt und dem Tag).
+
 Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
           cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
           cbtool.py kasse-widersprechen --meldung <nr> --grund <text>
@@ -1363,6 +1374,164 @@ WARE = {
 }
 
 
+# ---------------------------------------------------------------- Journal: Betriebs-Journal (Spec betriebs-journal.md, 29.10.2026)
+
+JOURNAL = "/api/brain-read/journal"
+JOURNAL_ARTEN = ("ereignis", "entscheidung", "zusage", "uebergabe")  # freigabe schreibt nur eine Tür, nie der Befehl
+JOURNAL_LESE_ARTEN = JOURNAL_ARTEN + ("freigabe", "fakten", "station", "termin", "bewegung", "bestellung", "einsendung", "angebot", "feedback")
+JOURNAL_BEREICHE = ("supply_chain", "sales", "finanzen", "team", "allgemein", "privat")  # wie im Tool (konto-rechte.ts)
+JOURNAL_REF_ARTEN = ("bestellung", "aufgabe", "einsendung", "sendung", "mail", "journal", "sonstiges")
+JOURNAL_TEXT_MIN, JOURNAL_TEXT_MAX = 10, 1000
+JOURNAL_FEHLT = "Das Journal gibt es im Tool noch nicht (Route fehlt). Bis dahin nichts eintragen; Übergaben wie bisher."
+
+
+def _zeit_kurz(wert: str | None) -> str:
+    """ISO-Zeitpunkt → `29.10. 14:12` (Berlin)."""
+    t = _zeitpunkt(wert) or "?"
+    m = re.match(r"^(\d{2}\.\d{2}\.)\d{4}( \d{2}:\d{2})?$", t)
+    return f"{m.group(1)}{m.group(2) or ''}" if m else t
+
+
+def _journal_zeile(e: dict) -> str:
+    """J-1234 · 29.10. 14:12 · Silver · uebergabe › Maxi · Text · (Beleg) — Fakten ohne Nummer, mit ihrer Quelle als Art."""
+    teile = [e["nr"]] if e.get("nr") else []
+    teile.append(_zeit_kurz(e.get("passiertAm")))
+    teile.append(e.get("von") or "?")
+    art = e.get("art") or "?"
+    if e.get("fuer"):
+        art += f" › {e['fuer']}"
+    if e.get("faelligAm"):
+        art += f" bis {_datum_text(e['faelligAm'])}"
+    teile.append(art)
+    teile.append(e.get("text") or "")
+    zeile = " · ".join(teile)
+    if e.get("beleg") and e.get("quelle") == "journal" and e.get("kanal") != "trigger":
+        zeile += f" · ({e['beleg']})"
+    elif e.get("beleg") and e.get("kanal") == "schluessel":
+        zeile += f" · (Beleg: {e['beleg']})"
+    if e.get("offen"):
+        zeile += " · OFFEN"
+    elif e.get("quittiertAm"):
+        zeile += f" · quittiert {_zeit_kurz(e['quittiertAm'])} von {e.get('quittiertVon') or '?'}"
+    return zeile
+
+
+def _journal_call(pfad: str, body=None, method: str = "POST") -> dict:
+    try:
+        return call(pfad, body, method=method, timeout=TIMEOUT_LESEN, plain_errors=True, bei_404=None)
+    except SystemExit as e:
+        text = str(e.code)
+        if text == "Tool antwortet 404.":
+            raise SystemExit(JOURNAL_FEHLT)
+        raise
+
+
+def cmd_journal(args: list[str]) -> None:
+    """Journal lesen (GET /journal) oder eine Zeile quittieren (--quittieren J-1234)."""
+    quitt = _wert(args, "--quittieren")
+    if quitt is not None:
+        _rest_leer(args)
+        nr = quitt.strip().upper()
+        if not re.match(r"^J?-?\d+$", nr):
+            _falsch(f"--quittieren erwartet eine Journal-Nummer (J-1234), nicht „{quitt}“.")
+        nr = "J-" + nr.lstrip("J-")
+        res = _journal_call(f"{JOURNAL}/{urllib.parse.quote(nr)}/quittieren", None)
+        e = res.get("eintrag") or {}
+        print(("Schon quittiert: " if res.get("wiederholt") else "Quittiert: ") + _journal_zeile(e))
+        return
+    q = {}
+    for opt, feld in (("--seit", "seit"), ("--von", "von"), ("--offen-fuer", "offen_fuer"), ("--ref", "ref"), ("--limit", "limit")):
+        w = _wert(args, opt)
+        if w is not None:
+            q[feld] = w.strip()
+    art = _wahl(_wert(args, "--art"), "--art", JOURNAL_LESE_ARTEN)
+    if art:
+        q["art"] = art
+    bereich = _wahl(_wert(args, "--bereich"), "--bereich", JOURNAL_BEREICHE)
+    if bereich:
+        q["bereich"] = bereich
+    _rest_leer(args)
+    if "limit" in q:
+        _zahl(q["limit"], "--limit", 1, 200)
+    if "seit" in q and not re.match(r"^(\d{1,4}[dhDH]|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?)$", q["seit"]):
+        _falsch(f"--seit erwartet 2d, 12h, YYYY-MM-DD oder YYYY-MM-DDTHH:MM, nicht „{q['seit']}“.")
+    pfad = JOURNAL + ("?" + urllib.parse.urlencode(q) if q else "")
+    res = _journal_call(pfad, method="GET")
+    eintraege = res.get("eintraege") or []
+    if "offen_fuer" in q:
+        kopf = f"Offen für {q['offen_fuer']}: {len(eintraege)}"
+    else:
+        seit = (res.get("stand") or {}).get("seit")
+        kopf = f"Journal seit {_zeit_kurz(seit)}: {len(eintraege)} Einträge" if seit else f"Journal: {len(eintraege)} Einträge"
+    print(kopf)
+    for e in eintraege:
+        print(_journal_zeile(e))
+    if res.get("hinweis"):
+        print(res["hinweis"])
+    if "offen_fuer" in q and eintraege:
+        print("Gesehen? journal --quittieren <J-Nr> (nur, was wirklich gesehen ist).")
+
+
+def cmd_journal_neu(args: list[str]) -> None:
+    """Eine Zeile ins Journal (POST /journal). Kein Vorschau-Schritt: eine Journal-Zeile bucht nichts."""
+    art = _wert(args, "--art")
+    text_roh = _wert(args, "--text")
+    beleg_roh = _wert(args, "--beleg")
+    ref = _wert(args, "--ref")
+    ref_art = _wahl(_wert(args, "--ref-art"), "--ref-art", JOURNAL_REF_ARTEN)
+    fuer = _wert(args, "--fuer")
+    faellig = _wert(args, "--faellig")
+    bereich = _wahl(_wert(args, "--bereich"), "--bereich", JOURNAL_BEREICHE)
+    passiert = _wert(args, "--passiert")
+    schluessel = _wert(args, "--schluessel")
+    _rest_leer(args)
+    if art is None or art.strip().lower() not in JOURNAL_ARTEN:
+        _falsch("--art erwartet ereignis, entscheidung, zusage oder uebergabe (Freigaben schreibt nur eine Tür des Tools).")
+    art = art.strip().lower()
+    text = re.sub(r"\s*[\r\n]+\s*", " ", text_roh or "").strip()
+    if not JOURNAL_TEXT_MIN <= len(text) <= JOURNAL_TEXT_MAX:
+        _falsch(f"--text: ein bis zwei Sätze, was passiert ist ({JOURNAL_TEXT_MIN} bis {JOURNAL_TEXT_MAX} Zeichen). Ort und Beleg nennen, nicht den Inhalt kopieren.")
+    if art == "ereignis" and re.match(r"^aufgabe\s+cb-?\d", text, re.IGNORECASE):
+        _falsch("Aufgaben-Ereignisse schreibt das Tool selbst (Trigger). Für Zusatzinfo: aufgabe-aendern CB-123 --notiz \"…\".")
+    beleg = _beleg(beleg_roh)
+    if art == "uebergabe" and not fuer:
+        _falsch("Eine Übergabe braucht --fuer: an wen sie geht (z. B. Max oder Silver).")
+    if art == "zusage" and not faellig:
+        _falsch("Eine Zusage braucht --faellig YYYY-MM-DD: bis wann sie gilt.")
+    if faellig is not None:
+        _tag_param(faellig, "--faellig")
+    if passiert is not None and not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$", passiert.strip()):
+        _falsch(f"--passiert erwartet YYYY-MM-DDTHH:MM (Berliner Zeit), nicht „{passiert}“.")
+    if ref is not None and (not ref.strip() or re.search(r"\s", ref.strip()) or len(ref.strip()) > 100):
+        _falsch("--ref ist eine Nummer ohne Leerzeichen (PO-032, CB-123, IN-2026-0039, J-12, Thread-ID).")
+    if ref_art and not ref:
+        _falsch("--ref-art geht nur zusammen mit --ref.")
+    if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
+        _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
+    body = {"art": art, "text": text, "beleg": beleg}
+    for feld, wert in (("ref", ref and ref.strip()), ("ref_art", ref_art), ("offen_fuer", fuer and fuer.strip()), ("faellig_am", faellig), ("bereich", bereich), ("passiert_am", passiert and passiert.strip())):
+        if wert:
+            body[feld] = wert
+    # Schlüssel aus dem Inhalt und dem Berliner Tag: derselbe Befehl am selben Tag ist dieselbe Zeile.
+    body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "journal", "tag": _heute_berlin(), **body})
+    try:
+        res = _journal_call(JOURNAL, body)
+    except SystemExit as e:
+        if str(e.code) == JOURNAL_FEHLT:
+            raise
+        raise SystemExit(f"Nicht eingetragen: {e.code}")
+    e = res.get("eintrag") or {}
+    print(("Schon eingetragen (gleicher Befehl): " if res.get("wiederholt") else "Eingetragen: ") + _journal_zeile(e))
+    if e.get("link") and e.get("quelle") == "journal":
+        print(f"Link (Journal-Seite folgt): {e['link']}")
+
+
+JOURNAL_BEFEHLE = {
+    "journal": cmd_journal,
+    "journal-neu": cmd_journal_neu,
+}
+
+
 # ---------------------------------------------------------------- Kasse: Bruno-Kaffeekasse (Vertrag vertrag-kasse.md, 16.10.2026)
 # Das Skript rechnet nichts: Beträge, Fälligkeit, Zinsen und wer was darf entscheidet das Tool (kasse-core.ts).
 # Es liest keine Bilder und nimmt keine Dateien: Claude liest den Screenshot und übergibt nur Betrag, Datum, Empfänger.
@@ -1666,6 +1835,9 @@ def main(argv: list[str]) -> None:
     elif cmd in WARE:
         HILFE = "Ware:"
         WARE[cmd](args)
+    elif cmd in JOURNAL_BEFEHLE:
+        HILFE = "Journal:"
+        JOURNAL_BEFEHLE[cmd](args)
     elif cmd in KASSE_BEFEHLE:
         HILFE = "Kasse:"
         KASSE_BEFEHLE[cmd](args)
