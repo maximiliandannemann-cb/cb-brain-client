@@ -12,13 +12,16 @@ Befehle:  cbtool.py setup <schlüssel> [url] Schlüssel prüfen (Ping) und speic
           cbtool.py drop-file [--started <epoch>] [--scanned <n>] <pfad> [...]
                                             Dateien (.md/.txt) in die Inbox; Maße für /wiki-extract
 
-Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|erledigt|alle] [--suche <text>] [--limit <n>]
+Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|wartet|erledigt|alle] [--suche <text>] [--limit <n>]
           cbtool.py aufgabe CB-123
           cbtool.py aufgabe-neu --titel <text> [--beschreibung <text>] [--fuer <name>] [--faellig YYYY-MM-DD] [--prio 1-4]
                                 [--groesse klein|mittel|gross]
           cbtool.py aufgabe-aendern CB-123 [--erledigt | --offen] [--ergebnis <satz>] [--notiz <text>]
                                             [--faellig YYYY-MM-DD | --faellig-weg] [--grund <text>] [--prio 1-4]
                                             [--fuer <name> | --fuer-weg] [--groesse klein|mittel|gross]
+                                            [--wartet-auf <wer> | --wartet-weg]
+          --wartet-auf: liegt bei jemand anderem (z. B. Lüschow); das Tool merkt sich seit wann und zeigt nach drei
+          Werktagen „nachfassen“. --wartet-weg: liegt wieder bei uns. aufgaben --status wartet listet sie.
           cbtool.py erledigt --titel <text> --groesse klein|mittel|gross --ergebnis <satz> [--notiz <text>]
                                             erledigte Arbeit für sich selbst eintragen (nur nach Ja der Person)
           --ergebnis: ein Satz (10-2000 Zeichen), was herauskam und wo es liegt, mit Link zum Beleg, wo es einen
@@ -43,6 +46,11 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           --grund: ein Satz (1-300 Zeichen), warum sich der Termin ändert, wörtlich von der Person oder aus der
           Quelle mit ihrem Ja. --quelle: Beleg in einer Zeile, z. B. Mail-Link. Nur der Termin ändert sich; die
           PO braucht schon einen bestätigten Termin (den ersten trägt man im Tool mit der AB ein).
+          cbtool.py bestellung-meilenstein PO-032 --schritt fertig|konfektionierer-eingang|konfektionierer-versand|eingang
+                                   --datum YYYY-MM-DD --beleg <satz> (--menge <n> | --position SKU=<n> ...)
+                                   [--standort <code>] [--schluessel <id>] [--ausfuehren]
+                                   Meilenstein oder Wareneingang melden. Ohne --ausfuehren nur Vorschau (nichts
+                                   geschrieben); mit --ausfuehren eintragen, nur nach Ja der Person. Hilfe: --help
 
 Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
           cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
@@ -284,6 +292,16 @@ def _tag(wert: str | None, jahr: bool = False) -> str | None:
     return f"{d:02d}.{mo:02d}." + (str(y) if jahr else "")
 
 
+def _wartet_text(a: dict) -> str:
+    """„wartet auf Lüschow seit 29.10., nachfassen 03.11.“ (mit „fällig“, wenn das Tool es so meldet)."""
+    text = f"wartet auf {a['wartetAuf']}"
+    if a.get("wartetSeit"):
+        text += f" seit {_tag(a['wartetSeit'])}"
+    if a.get("nachfassenAm"):
+        text += f", nachfassen {'fällig ' if a.get('nachfassenFaellig') else ''}{_tag(a['nachfassenAm'])}"
+    return text
+
+
 def _zeile(a: dict) -> str:
     """CB-123 · hoch · fällig 16.10. (überfällig) · Mats · Titel — fehlende Felder fallen weg."""
     teile = [a.get("id") or f"CB-{a.get('nummer', '?')}"]
@@ -295,6 +313,8 @@ def _zeile(a: dict) -> str:
         teile.append(f"fällig {_tag(a['faellig'])}" + (" (überfällig)" if a.get("ueberfaellig") else ""))
     if a.get("fuer"):
         teile.append(a["fuer"])
+    if a.get("wartetAuf") and not a.get("erledigtAm"):
+        teile.append(_wartet_text(a))
     teile.append(a.get("titel") or "(ohne Titel)")
     zeile = " · ".join(teile)
     if a.get("erledigtAm") and a.get("ergebnis"):
@@ -440,12 +460,12 @@ def cmd_aufgaben(args: list[str]) -> None:
     suche = _wert(args, "--suche")
     limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
     _rest_leer(args)
-    if status and status not in ("offen", "erledigt", "alle"):
-        _falsch(f"--status erwartet offen, erledigt oder alle, nicht „{status}“.")
+    if status and status not in ("offen", "wartet", "erledigt", "alle"):
+        _falsch(f"--status erwartet offen, wartet, erledigt oder alle, nicht „{status}“.")
     q = {k: v for k, v in (("fuer", fuer), ("status", status), ("suche", suche), ("limit", limit)) if v is not None}
     res = call(AUFGABEN + ("?" + urllib.parse.urlencode(q) if q else ""), method="GET", plain_errors=True)
     liste = res.get("aufgaben") or []
-    art = {"offen": "offenen ", "erledigt": "erledigten ", "alle": ""}[status or "offen"]
+    art = {"offen": "offenen ", "wartet": "wartenden ", "erledigt": "erledigten ", "alle": ""}[status or "offen"]
     wer = res.get("fuer") or fuer
     if not liste:
         text = f"Keine {art}Aufgaben"
@@ -455,7 +475,7 @@ def cmd_aufgaben(args: list[str]) -> None:
             text += f" zu „{suche}“"
         print(text + ".")
         return
-    kopf = {"offen": "Offene Aufgaben", "erledigt": "Erledigte Aufgaben", "alle": "Alle Aufgaben"}[status or "offen"]
+    kopf = {"offen": "Offene Aufgaben (liegen bei uns)", "wartet": "Aufgaben, die bei anderen liegen", "erledigt": "Erledigte Aufgaben", "alle": "Alle Aufgaben"}[status or "offen"]
     if (wer or "").lower() == "alle":
         kopf += " im Team"
     elif wer:
@@ -472,7 +492,8 @@ def _ausfuehrlich(a: dict) -> None:
     if a.get("erledigtAm"):
         print(f"Status: erledigt am {_tag(a['erledigtAm'], jahr=True)}")
     else:
-        print("Status: offen" + (" (überfällig)" if a.get("ueberfaellig") else ""))
+        status = _wartet_text(a) if a.get("wartetAuf") else "offen, liegt bei uns"
+        print(f"Status: {status}" + (" (überfällig)" if a.get("ueberfaellig") else ""))
     for label, wert in (
         ("Prio", a.get("prioText")),
         ("Für", a.get("fuer")),
@@ -518,6 +539,8 @@ def cmd_aufgabe_neu(args: list[str]) -> None:
 def cmd_aufgabe_aendern(args: list[str]) -> None:
     erledigt, offen = _schalter(args, "--erledigt"), _schalter(args, "--offen")
     faellig_weg, fuer_weg = _schalter(args, "--faellig-weg"), _schalter(args, "--fuer-weg")
+    wartet_weg = _schalter(args, "--wartet-weg")
+    wartet_auf = _wert(args, "--wartet-auf")
     notiz = _wert(args, "--notiz")
     faellig = _datum(_wert(args, "--faellig"))
     grund = _grund(_wert(args, "--grund"))
@@ -540,6 +563,14 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         _falsch("--grund geht nur zusammen mit --faellig oder --faellig-weg.")
     if fuer and fuer_weg:
         _falsch("--fuer und --fuer-weg schließen sich aus.")
+    if wartet_auf is not None and wartet_weg:
+        _falsch("--wartet-auf und --wartet-weg schließen sich aus.")
+    if (wartet_auf is not None or wartet_weg) and (erledigt or offen):
+        _falsch("--wartet-auf/--wartet-weg gehen nicht zusammen mit --erledigt/--offen (erledigen und wieder öffnen leeren es).")
+    if wartet_auf is not None:
+        wartet_auf = re.sub(r"\s+", " ", wartet_auf).strip()
+        if not wartet_auf or len(wartet_auf) > 80:
+            _falsch("--wartet-auf erwartet, wer gerade dran ist (1 bis 80 Zeichen), z. B. --wartet-auf Lüschow.")
     body = {}
     if erledigt or offen:
         body["erledigt"] = erledigt
@@ -561,6 +592,9 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
     # Nur mitschicken, wenn gesetzt: das Tool vor #437 lehnt unbekannte Felder mit 400 ab.
     if ergebnis is not None:
         body["ergebnis"] = ergebnis
+    # Nur mitschicken, wenn gesetzt: das Tool vor dem 29.10.2026 lehnt unbekannte Felder mit 400 ab.
+    if wartet_auf is not None or wartet_weg:
+        body["wartet_auf"] = wartet_auf
     if not body:
         _falsch("Nichts zu ändern.")
     try:
@@ -580,6 +614,7 @@ def cmd_aufgabe_aendern(args: list[str]) -> None:
         "fuer": f"für {a['fuer']}" if a.get("fuer") else "ohne Person",
         "groesse": f"Größe {GROESSE_TEXT.get(a.get('groesse') or '', 'ohne')}",
         "ergebnis": "Ergebnis gespeichert",
+        "wartet": _wartet_text(a) if a.get("wartetAuf") else "liegt wieder bei uns",
     }
     geaendert = res.get("geaendert") or []
     print("Geändert: " + (", ".join(texte.get(g, g) for g in geaendert) or "nichts") + ".")
@@ -905,6 +940,138 @@ def cmd_bestellung_eta(args: list[str]) -> None:
         print(f"Link: {a['link']}")
 
 
+MEILENSTEIN_HILFE = """bestellung-meilenstein: Meilenstein oder Wareneingang einer Bestellung melden (Tool-Tür A, 29.10.2026).
+
+  cbtool.py bestellung-meilenstein <PO> --schritt <schritt> --datum YYYY-MM-DD --beleg "<satz>"
+                                   (--menge <n> | --position SKU=<n> [--position SKU=<n> ...])
+                                   [--standort <code>] [--schluessel <id>] [--ausfuehren]
+
+  --schritt     fertig (Produktion fertig), konfektionierer-eingang, konfektionierer-versand (nur mit
+                Konfektionierer), eingang (Im Lager angekommen, bucht Bestand wie im Tool)
+  --datum       wann es passiert ist, nicht in der Zukunft, nicht vor dem Bestelldatum
+  --menge       Stück. Station: höchstens die Bestellmenge. Eingang: höchstens offen, bei einer Position
+  --position    Eingang mit mehreren Positionen, je SKU einmal, z. B. --position 2-M-TK-120=1806
+  --standort    nur Eingang: Lager-Code, wenn das Ziel der Bestellung nicht passt (Direkt-FBA: entfällt)
+  --beleg       Pflicht, 10 bis 500 Zeichen: woher die Information kommt, mit Link (Mail, Lieferschein, Tracking)
+  --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus dem Inhalt gebildet. Derselbe Befehl zweimal bucht
+                nie doppelt.
+  --ausfuehren  eintragen. Ohne nur Vorschau: das Tool rechnet die Buchung durch und schreibt nichts.
+
+Überlieferung, Nachträge an angelieferten Bestellungen und Stornos gehen nur im Tool."""
+MEILENSTEIN_SCHRITTE = ("fertig", "konfektionierer-eingang", "konfektionierer-versand", "eingang")
+BELEG_MIN, BELEG_MAX = 10, 500  # wie im Tool (src/lib/schritt-schluessel.ts)
+JA_NEIN = {True: "ja", False: "nein"}
+
+
+def _beleg(wert: str | None) -> str:
+    """Beleg wie im Tool: Umbrüche zu Leerzeichen, außen getrimmt, 10 bis 500 Zeichen (Codepunkte wie char_length)."""
+    b = re.sub(r"\s*[\r\n]+\s*", " ", wert or "").strip()
+    if len(b) < BELEG_MIN:
+        _falsch(f"--beleg fehlt oder ist zu kurz: ein Satz, woher die Information kommt, mit Link ({BELEG_MIN} bis {BELEG_MAX} Zeichen).")
+    if len(b) > BELEG_MAX:
+        _falsch(f"--beleg darf höchstens {BELEG_MAX} Zeichen lang sein.")
+    return b
+
+
+def _idempotenz(teile: dict) -> str:
+    """Schlüssel aus dem Inhalt: derselbe Befehl ergibt denselben Schlüssel, eine Wiederholung bucht nicht doppelt."""
+    import hashlib
+    roh = json.dumps(teile, sort_keys=True, ensure_ascii=False)
+    return "cbtool-" + hashlib.sha256(roh.encode("utf-8")).hexdigest()[:40]
+
+
+def cmd_bestellung_meilenstein(args: list[str]) -> None:
+    """Meilenstein oder Wareneingang melden (POST /bestellungen/<nr>/schritt). Standard: Vorschau; --ausfuehren schreibt."""
+    if "--help" in args or "-h" in args:
+        print(MEILENSTEIN_HILFE)
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    schritt = _wert(args, "--schritt")
+    datum = _wert(args, "--datum")
+    menge_roh = _wert(args, "--menge")
+    standort = _wert(args, "--standort")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _wert(args, "--schluessel")
+    positionen = []
+    while "--position" in args:
+        p = _wert(args, "--position")
+        m = re.match(r"^\s*([A-Za-z0-9._-]+)\s*=\s*(\d+)\s*$", p or "")
+        if not m or int(m.group(2)) <= 0:
+            _falsch(f"--position erwartet SKU=Menge, z. B. 2-M-TK-120=1806, nicht „{p}“.")
+        positionen.append({"sku": m.group(1), "menge": int(m.group(2))})
+    nr = _ref(args, "bestellung-meilenstein", "PO-032")
+    if schritt is None or schritt.strip().lower() not in MEILENSTEIN_SCHRITTE:
+        _falsch("--schritt erwartet fertig, konfektionierer-eingang, konfektionierer-versand oder eingang.")
+    schritt = schritt.strip().lower()
+    if datum is None:
+        _falsch("bestellung-meilenstein braucht --datum YYYY-MM-DD.")
+    _tag_param(datum, "--datum")
+    if datum > _heute_berlin():
+        _falsch(f"Das Datum {_datum_text(datum, voll=True)} liegt in der Zukunft. Gemeldet wird, was passiert ist.")
+    beleg = _beleg(beleg_roh)
+    menge = None
+    if menge_roh is not None:
+        if not re.match(r"^\d+$", menge_roh.strip()) or int(menge_roh) <= 0:
+            _falsch(f"--menge erwartet eine ganze Zahl größer als 0, nicht „{menge_roh}“.")
+        menge = int(menge_roh)
+    if schritt == "eingang":
+        if menge is not None and positionen:
+            _falsch("Entweder --menge (eine Position) oder --position, nicht beides.")
+        if menge is None and not positionen:
+            _falsch("Eingang braucht --menge (eine Position) oder --position SKU=<n>.")
+        skus = [p["sku"].lower() for p in positionen]
+        if len(set(skus)) != len(skus):
+            _falsch("Jede SKU darf nur einmal in --position stehen.")
+    else:
+        if positionen or standort is not None:
+            _falsch("--position und --standort gibt es nur bei --schritt eingang.")
+        if menge is None:
+            _falsch("Diese Station braucht --menge (Stück, wie im Tool).")
+    if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
+        _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
+    body = {"schritt": schritt, "datum": datum, "beleg": beleg}
+    if menge is not None:
+        body["menge"] = menge
+    if positionen:
+        body["positionen"] = positionen
+    if standort is not None:
+        body["standort"] = standort.strip()
+    body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "bestellung_schritt", "po": urllib.parse.unquote(nr).upper(), **body})
+    body["vorschau"] = not ausfuehren
+    try:
+        res = call(f"{LESEN}/bestellungen/{nr}/schritt", body, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
+    except SystemExit as e:
+        text = str(e.code)
+        if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool)
+            raise SystemExit("Meilensteine über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool eintragen (Bestellung › Was ist passiert?).")
+        raise SystemExit(f"Nicht eingetragen: {text}")
+    a = res.get("aenderung") or {}
+    kopf = f"{a.get('po')} · {a.get('schrittText')} am {_datum_text(a.get('datum'), voll=True)}"
+    if a.get("wiederholt"):
+        print(f"Schon eingetragen (gleiche Meldung, {_datum_text((a.get('gebuchtAm') or '')[:10], voll=True)}): {kopf}. Nichts neu geschrieben.")
+    elif a.get("vorschau"):
+        print(f"Vorschau, nichts geschrieben: {kopf}")
+    else:
+        print(f"Eingetragen: {kopf}")
+    if a.get("statusVorher") != a.get("statusNachher"):
+        print(f"Status: {a.get('statusVorher')} › {a.get('statusNachher')}")
+    for st in a.get("stationenNeu") or []:
+        zusatz = " (abgeleitet)" if st.get("abgeleitet") else ""
+        menge_txt = f", {st['menge']:,} Stück".replace(",", ".") if st.get("menge") is not None else ""
+        print(f"  + {st.get('schrittText')} {_datum_text(st.get('datum'), voll=True)}{menge_txt}{zusatz}")
+    e = a.get("eingang")
+    if e:
+        ort = "Amazon FBA (direkt)" if e.get("direktFba") else (e.get("standort") or "?")
+        print(f"Wareneingang: {ort}, bestandswirksam {JA_NEIN[bool(e.get('bestandswirksam'))]}")
+        for p in e.get("positionen") or []:
+            print(f"  {p.get('sku')}: +{p.get('menge')} (eingegangen {p.get('eingegangenVorher')} › {p.get('eingegangenNachher')} von {p.get('bestellt')})")
+    print(f"Beleg: {a.get('beleg')}")
+    if a.get("vorschau") and not a.get("wiederholt"):
+        print("Zum Eintragen denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person.")
+    if a.get("link"):
+        print(f"Link: {a['link']}")
+
+
 # ---- Sendungen
 
 def _sendung_zeile(s: dict) -> str:
@@ -1164,6 +1331,7 @@ WARE = {
     "bestellungen": cmd_bestellungen,
     "bestellung": cmd_bestellung,
     "bestellung-eta": cmd_bestellung_eta,
+    "bestellung-meilenstein": cmd_bestellung_meilenstein,
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,

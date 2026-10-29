@@ -1,11 +1,11 @@
 ---
 name: ware
-description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
+description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO und meldet Meilensteine und Wareneingänge, beides nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
 ---
 
 # /ware
 
-Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit einer Ausnahme: `bestellung-eta` verschiebt den bestätigten Termin einer PO, nur auf Wort der Person (Abschnitt unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
+Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit zwei Ausnahmen, beide nur auf Wort der Person: `bestellung-eta` verschiebt den bestätigten Termin einer PO, `bestellung-meilenstein` meldet einen Meilenstein oder Wareneingang (Abschnitte unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
 
 ## Welcher Befehl
 
@@ -20,6 +20,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Wie lief Produkt X? | `absatz --suche <SKU oder Name>`, Zeitraum `--von/--bis YYYY-MM-DD` (Standard 30 Tage bis gestern, höchstens 400), `--kanal amazon\|shop`, `--je tag\|woche` für den Verlauf |
 
 | Termin einer PO verschieben (nur nach Ja) | `bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]` |
+| Meilenstein oder Wareneingang melden (nur nach Ja) | `bestellung-meilenstein PO-032 --schritt fertig\|konfektionierer-eingang\|konfektionierer-versand\|eingang --datum YYYY-MM-DD --menge <n> --beleg "<satz>"`, erst ohne, dann mit `--ausfuehren` |
 
 Relative Zeiträume („letzte Woche“, „seit August“) vom heutigen Datum aus in `--von/--bis` umrechnen und den Zeitraum in der Antwort nennen.
 
@@ -48,6 +49,14 @@ Was nicht geht, und was dann zu tun ist:
 - Nur der Termin ändert sich. Status, Mengen, AB-Nummer und Beträge ändert der Befehl nie; dafür ins Tool verweisen.
 - Sendungen zu Amazon (IN-2026-…): kein Befehl. Der Termin wird im Tool gepflegt.
 
+## Meilenstein und Wareneingang melden, nur auf Wort der Person
+
+1. `bestellung <nr>` lesen. Dann `bestellung-meilenstein … --beleg "<satz>"` **ohne** `--ausfuehren`: das ist die Vorschau, das Tool rechnet die Buchung durch und schreibt nichts. Die Vorschau der Person zeigen (Station, Status alt › neu, beim Eingang Lager und „bestandswirksam“).
+2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`. Ein Ja gilt nur für die gezeigte Meldung.
+3. `--beleg` ist Pflicht: woher die Information kommt, mit Link (Mail über die Composio-CLI, Lieferschein, Tracking). Nie erfinden.
+4. Menge wie gemeldet, nie schätzen. Mehr als offen, Nachträge an angelieferten POs, Stornos und Überlieferung: lehnt das Tool ab, ins Tool verweisen.
+5. „Schon eingetragen“ heißt: dieselbe Meldung lief schon, nichts doppelt. „Schon erfasst“ heißt: gleiche Station, Datum und Menge stehen schon im Tool.
+
 ## Grenzen
 
 - **Keine eigene Reichweite oder Prognose.** Nicht aus Bestand und Absatz ausrechnen, wie lange die Ware reicht oder wann sie ausgeht. Verweisen: „Reichweite steht im Tool unter Bestandsprognose“ plus Produkt-Link.
@@ -55,7 +64,7 @@ Was nicht geht, und was dann zu tun ist:
 - **Conversion über 100 % oder mit „zu hoch“:** Für Tage vor dem 11.07.2026 (alte Flieber-Historie) fehlen die Sitzungen. Den Hinweis aus der Ausgabe weitergeben, die Zahl nicht deuten; für eine belastbare Conversion den Zeitraum ab 11.07.2026 abfragen.
 - Shops zeigen Umsatz nur je Shop, je Produkt nur Stück und Bestellungen (so wie das Tool). Keine Aufteilung selbst rechnen.
 - Keine Mails senden. Eine Rückfrage an einen Lieferanten höchstens als Entwurf im Chat.
-- Schreiben nur über `bestellung-eta` und nur nach Ja (Abschnitt oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen.
+- Schreiben nur über `bestellung-eta` und `bestellung-meilenstein`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Sendungen anlegen oder POs verknüpfen geht nicht.
 
 ## Fehler
 

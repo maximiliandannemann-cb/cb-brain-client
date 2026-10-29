@@ -45,7 +45,7 @@ Der Kontext-Hook zeigt Mo bis Fr höchstens einmal je Stunde den Satz des Tools,
 
 ## Ware (ab v0.3.0)
 
-`/ware` liest aus dem Tool, was zur Ware gehört: Bestellungen und ihr Stand („Wo steht PO-049?“), Sendungen zu Amazon, Bestand je Produkt (FBA, Lager, unterwegs), die Bestellplanung und den Absatz auf Amazon und in den Shops. Dieselben Zahlen wie im Tool. Schreiben kann `/ware` nur eines: den bestätigten Termin einer offenen PO verschieben (`bestellung-eta`), mit Grund und nur nach Ja der Person; der Eintrag steht im Verlauf der PO, markiert „über cbtool“. Reichweite und Prognose bleiben im Tool (Bestandsprognose), Finanzen (EK, Zahlungen, Cashflow) gibt es über Claude nicht. Derselbe Schlüssel, keine weitere Einrichtung.
+`/ware` liest aus dem Tool, was zur Ware gehört: Bestellungen und ihr Stand („Wo steht PO-049?“), Sendungen zu Amazon, Bestand je Produkt (FBA, Lager, unterwegs), die Bestellplanung und den Absatz auf Amazon und in den Shops. Dieselben Zahlen wie im Tool. Schreiben kann `/ware` zweierlei, beides nur nach Ja der Person: den bestätigten Termin einer offenen PO verschieben (`bestellung-eta`, mit Grund; der Eintrag steht im Verlauf der PO, markiert „über cbtool“) und einen Meilenstein oder Wareneingang melden (`bestellung-meilenstein`, mit Beleg; erst Vorschau, geschrieben wird nur mit `--ausfuehren`). Reichweite und Prognose bleiben im Tool (Bestandsprognose), Finanzen (EK, Zahlungen, Cashflow) gibt es über Claude nicht. Derselbe Schlüssel, keine weitere Einrichtung.
 
 ## Wenn der Wiki-Kontext fehlt
 
