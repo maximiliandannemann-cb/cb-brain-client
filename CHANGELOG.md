@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 (29.10.2026)
+
+- Neu: `/journal` und `cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <art>|fakten] [--ref PO-032] [--bereich <b>] [--limit <n>]`. Liest das Betriebs-Journal des Tools, reine Historie: Einträge von Personen, Claude Code und Silver, dazu Stationen, Termine, Bewegungen und Aufgaben-Wechsel aus dem Tool. Eine Zeile je Eintrag: `J-1234 · 29.10. 14:12 · Silver · uebergabe · Text · CB-460 · (Beleg)`. Was offen ist, steht in den Aufgaben.
+- `journal-neu --art ereignis|entscheidung|zusage|uebergabe --text "…" --beleg "…" [--ref …] [--ref-art …] [--faellig YYYY-MM-DD] [--bereich …] [--passiert YYYY-MM-DDTHH:MM]` trägt eine Zeile ein, nur nach Ja. Eine Übergabe zeigt auf die Aufgabe, die die Arbeit trägt (`--ref CB-123`), Zusage braucht `--faellig`. Der Idempotenz-Schlüssel kommt aus dem Inhalt und dem Berliner Tag: derselbe Befehl am selben Tag schreibt nie doppelt. Lokal abgelehnt, ohne zu senden: Aufgaben-Ereignisse von Hand („Aufgabe CB-… erledigt“), `freigabe` (schreibt nur eine Tür), Text oder Beleg zu kurz oder zu lang, falsche Daten.
+- Skill `skills/journal/SKILL.md`: wann eine Zeile fällig ist, was nie von Hand kommt, Übergabe am Ende einer Sitzung als Aufgabe plus Zeile.
+- Prüfskript `tests/pruefe-journal.py` (ohne Framework, ohne Netz, Uhr fest).
+- Braucht das Tool mit den Routen `/api/brain-read/journal` und der Migration `2026-10-30-betriebs-journal.sql` (company-interface, Branch `lauf/betriebs-journal`). Davor sagen die Befehle „gibt es im Tool noch nicht“ bzw. „noch nicht freigeschaltet“ und schreiben nichts.
+
 ## 0.10.0 (29.10.2026)
 
 - Neu: `cbtool.py bestellung-meilenstein PO-032 --schritt fertig|konfektionierer-eingang|konfektionierer-versand|eingang --datum YYYY-MM-DD --beleg "<satz>" (--menge <n> | --position SKU=<n> …) [--standort <code>] [--ausfuehren]`. Meldet einen Meilenstein oder Wareneingang so, wie das Fenster „Was ist passiert?“ im Tool bucht. Ohne `--ausfuehren` nur Vorschau: das Tool rechnet die Buchung durch (Status, abgeleitete Stationen, bestandswirksam ja/nein) und schreibt nichts. `--help` zeigt alle Felder.
