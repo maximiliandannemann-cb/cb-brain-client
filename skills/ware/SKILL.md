@@ -1,11 +1,11 @@
 ---
 name: ware
-description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO und meldet Meilensteine und Wareneingänge, beides nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
+description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO, meldet Meilensteine und Wareneingänge, Einsendungen als abgeholt oder eingebucht und Abholungen von Direktlieferungen (mit Amazon-ID), alles nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
 ---
 
 # /ware
 
-Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit zwei Ausnahmen, beide nur auf Wort der Person: `bestellung-eta` verschiebt den bestätigten Termin einer PO, `bestellung-meilenstein` meldet einen Meilenstein oder Wareneingang (Abschnitte unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
+Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit vier Ausnahmen, alle nur auf Wort der Person: `bestellung-eta` verschiebt den bestätigten Termin einer PO, `bestellung-meilenstein` meldet einen Meilenstein oder Wareneingang, `einsendung-status` meldet eine Einsendung als abgeholt oder eingebucht, `sendung-abholen` erfasst die Abholung einer Direktlieferung (Abschnitte unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
 
 ## Welcher Befehl
 
@@ -21,6 +21,8 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 
 | Termin einer PO verschieben (nur nach Ja) | `bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]`, erst ohne, dann mit `--ausfuehren` |
 | Meilenstein oder Wareneingang melden (nur nach Ja) | `bestellung-meilenstein PO-032 --schritt fertig\|konfektionierer-eingang\|konfektionierer-versand\|eingang --datum YYYY-MM-DD --menge <n> --beleg "<satz>"`, erst ohne, dann mit `--ausfuehren` |
+| Einsendung abgeholt oder eingebucht melden (nur nach Ja) | `einsendung-status IN-2026-0046 --schritt abgeholt\|eingebucht --datum YYYY-MM-DD --beleg "<satz>" --grund "<satz>"`, erst ohne, dann mit `--ausfuehren` |
+| Abholung einer Direktlieferung erfassen (nur nach Ja) | `sendung-abholen PO-032 PO-033 --datum YYYY-MM-DD --amazon FBA… --beleg "<satz>" --grund "<satz>" [--spediteur <name>]`, erst ohne, dann mit `--ausfuehren` |
 
 Relative Zeiträume („letzte Woche“, „seit August“) vom heutigen Datum aus in `--von/--bis` umrechnen und den Zeitraum in der Antwort nennen.
 
@@ -57,6 +59,21 @@ Was nicht geht, und was dann zu tun ist:
 4. Menge wie gemeldet, nie schätzen. Mehr als offen, Nachträge an angelieferten POs, Stornos und Überlieferung: lehnt das Tool ab, ins Tool verweisen.
 5. „Schon eingetragen“ heißt: dieselbe Meldung lief schon, nichts doppelt. „Schon erfasst“ heißt: gleiche Station, Datum und Menge stehen schon im Tool.
 
+## Einsendung abgeholt oder eingebucht melden, nur auf Wort der Person
+
+1. `sendung <IN-Nummer oder Amazon-ID>` lesen. Dann `einsendung-status … --beleg "<satz>" --grund "<satz>"` **ohne** `--ausfuehren`: Vorschau, nichts geschrieben. Der Person zeigen: Status alt › neu und die Bewegungen (Abgang ins Transit, Einbuchen bei Amazon).
+2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`.
+3. `--beleg` ist Pflicht: woher die Information kommt, z. B. „Seller Central 30.10., FBA15MQCMGNC Receiving 3.521/3.920“ oder ein Mail-Link. `--grund`: ein Satz, warum die Einsendung jetzt so steht. Beides nie erfinden.
+4. Erst abgeholt, dann eingebucht, jeweils mit dem eigenen Datum. Gebucht wird immer die volle Menge; was Amazon schon gezählt hat, gehört in den Beleg. Rückwärts, Abschließen und Mengen: ins Tool verweisen.
+
+## Abholung einer Direktlieferung erfassen, nur auf Wort der Person
+
+1. Für Bestellungen ohne Konfektionierer, die der Lieferant direkt verschickt (z. B. an Amazon FBA). `bestellung <nr>` lesen. Alle Bestellungen nennen, die mit derselben Abholung reisen (gleiches Ziel). Dann `sendung-abholen … --beleg "<satz>" --grund "<satz>"` **ohne** `--ausfuehren`: Vorschau, nichts geschrieben. Der Person zeigen: Status je Bestellung (In Transit oder nur Nachtrag), welche Bestellungen danach in der Sendung reisen.
+2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`.
+3. `--amazon` bei Lieferung direkt an FBA (aus Seller Central), `--datum` = Abholtag. Beleg und Grund nie erfinden.
+4. „Stand anders als in der Vorschau“ oder „Schon erfasst“: nichts geschrieben; neue Vorschau zeigen bzw. so weitergeben, nicht anders versuchen.
+5. Schon angeliefert: das Tool trägt nur Amazon-ID und Tag nach. Bestand bucht diese Abholung nie; der Wareneingang bleibt `bestellung-meilenstein --schritt eingang`. Bestellungen mit Konfektionierer: dort ist es die Station `konfektionierer-versand`.
+
 ## Grenzen
 
 - **Keine eigene Reichweite oder Prognose.** Nicht aus Bestand und Absatz ausrechnen, wie lange die Ware reicht oder wann sie ausgeht. Verweisen: „Reichweite steht im Tool unter Bestandsprognose“ plus Produkt-Link.
@@ -64,7 +81,7 @@ Was nicht geht, und was dann zu tun ist:
 - **Conversion über 100 % oder mit „zu hoch“:** Für Tage vor dem 11.07.2026 (alte Flieber-Historie) fehlen die Sitzungen. Den Hinweis aus der Ausgabe weitergeben, die Zahl nicht deuten; für eine belastbare Conversion den Zeitraum ab 11.07.2026 abfragen.
 - Shops zeigen Umsatz nur je Shop, je Produkt nur Stück und Bestellungen (so wie das Tool). Keine Aufteilung selbst rechnen.
 - Keine Mails senden. Eine Rückfrage an einen Lieferanten höchstens als Entwurf im Chat.
-- Schreiben nur über `bestellung-eta` und `bestellung-meilenstein`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Sendungen anlegen oder POs verknüpfen geht nicht.
+- Schreiben nur über `bestellung-eta`, `bestellung-meilenstein`, `einsendung-status` und `sendung-abholen`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Einsendungen anlegen geht nicht.
 
 ## Fehler
 
