@@ -71,7 +71,8 @@ Was nicht geht, und was dann zu tun ist:
 1. Für Bestellungen ohne Konfektionierer, die der Lieferant direkt verschickt (z. B. an Amazon FBA). `bestellung <nr>` lesen. Alle Bestellungen nennen, die mit derselben Abholung reisen (gleiches Ziel). Dann `sendung-abholen … --beleg "<satz>" --grund "<satz>"` **ohne** `--ausfuehren`: Vorschau, nichts geschrieben. Der Person zeigen: Status je Bestellung (In Transit oder nur Nachtrag), welche Bestellungen danach in der Sendung reisen.
 2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`.
 3. `--amazon` bei Lieferung direkt an FBA (aus Seller Central), `--datum` = Abholtag. Beleg und Grund nie erfinden.
-4. Schon angeliefert: das Tool trägt nur Amazon-ID und Tag nach. Bestand bucht diese Abholung nie; der Wareneingang bleibt `bestellung-meilenstein --schritt eingang`. Bestellungen mit Konfektionierer: dort ist es die Station `konfektionierer-versand`.
+4. „Stand anders als in der Vorschau“ oder „Schon erfasst“: nichts geschrieben; neue Vorschau zeigen bzw. so weitergeben, nicht anders versuchen.
+5. Schon angeliefert: das Tool trägt nur Amazon-ID und Tag nach. Bestand bucht diese Abholung nie; der Wareneingang bleibt `bestellung-meilenstein --schritt eingang`. Bestellungen mit Konfektionierer: dort ist es die Station `konfektionierer-versand`.
 
 ## Grenzen
 

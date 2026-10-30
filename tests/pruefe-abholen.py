@@ -88,6 +88,7 @@ antwort["json"] = {"aenderung": {**AENDERUNG, "vorschau": False}}
 code, out, a = lauf(EIN + ["--ausfuehren"])
 schluessel = a["body"]["idempotenz_schluessel"] if a else ""
 pruefe("Ausführen: erst Vorschau, dann vorschau false mit Schlüssel", len(anfragen) == 2 and anfragen[0]["body"]["vorschau"] is True and a["body"]["vorschau"] is False and schluessel.startswith("cbtool-"))
+pruefe("K1: Status je Bestellung aus der Vorschau geht als erwartet mit", a and a["body"].get("erwartet") == {"PO-051-1-1-M-TK-60": "oc_received", "PO-032-1-2-M-TK-120": "received"} and "erwartet" not in anfragen[0]["body"])
 pruefe("Ausführen: Eingetragen", code == 0 and out.startswith("Eingetragen: Abholung 27.10.2026 als FBA15MP34324"))
 code, out, a2 = lauf(["PO-051-1-1-M-TK-60", "PO-032-1-2-M-TK-120"] + EIN[2:] + ["--ausfuehren"])
 pruefe("Kurzform und volle Nummern: derselbe Schlüssel", a2 and a2["body"]["idempotenz_schluessel"] == schluessel)
@@ -98,7 +99,16 @@ code, out, a = lauf(EIN + ["--ausfuehren"])
 pruefe("wiederholt: Schon eingetragen", code == 0 and "Schon eingetragen" in out)
 antwort["json"] = {"aenderung": AENDERUNG}
 code, out, a = lauf(EIN + ["--schluessel", "silver-abholen-1", "--ausfuehren"])
-pruefe("eigener --schluessel, eine Anfrage", a and len(anfragen) == 1 and a["body"]["idempotenz_schluessel"] == "silver-abholen-1")
+pruefe("eigener --schluessel: erst Vorschau, dann Schreiben mit diesem Schlüssel und erwartet", a and len(anfragen) == 2 and anfragen[0]["body"]["vorschau"] is True
+       and a["body"]["idempotenz_schluessel"] == "silver-abholen-1" and a["body"]["vorschau"] is False and "erwartet" in a["body"])
+antwort["json"] = {"aenderung": {**AENDERUNG, "wiederholt": True, "gebuchtAm": "2026-10-30T09:00:00Z"}}
+code, out, a = lauf(EIN + ["--schluessel", "silver-abholen-1", "--ausfuehren"])
+pruefe("eigener --schluessel schon gebucht: Vorschau sagt wiederholt, kein zweites Schreiben", len(anfragen) == 1 and "Schon eingetragen" in out)
+antwort["json"] = {"aenderung": AENDERUNG}
+code, out, a = lauf(["PO-051,PO-032"] + EIN[2:])
+pruefe("K5: Komma trennt wie Leerzeichen", a and a["body"]["bestellungen"] == ["PO-051", "PO-032"])
+code, out, a = lauf(["PO-051,", "PO-032"] + EIN[2:])
+pruefe("K5: „PO-051, PO-032“ geht auch", a and a["body"]["bestellungen"] == ["PO-051", "PO-032"])
 code, out, a = lauf(["PO-060", "--datum", "2026-10-27", "--beleg", BELEG, "--grund", GRUND])
 pruefe("ohne --amazon und --spediteur: Felder fehlen im Body", a and "amazon_shipment_id" not in a["body"] and "spediteur" not in a["body"])
 
@@ -122,6 +132,7 @@ for name, args, text in [
 
 for status, text in [
     (409, "Die Sendung ist schon als abgeholt am 26.10.2026 erfasst. Nichts geändert."),
+    (409, "Stand anders als in der Vorschau: PO-051-1-1-M-TK-60 steht auf in_transit, Vorschau zeigte oc_received. Nichts gebucht; Vorschau neu holen."),
     (400, "Eine Abholung hat ein Ziel: PO-060 geht an Hesterhoff, PO-051-1-1-M-TK-60 an Amazon FBA (direkt)."),
     (403, "Dieses Konto darf im Tool keine Abholungen erfassen."),
     (503, "Abholungen über den Schlüssel sind im Tool noch nicht freigeschaltet (Migration 2026-10-30-sendung-abholen.sql fehlt)."),

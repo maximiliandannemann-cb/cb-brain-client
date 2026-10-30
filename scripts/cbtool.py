@@ -1215,7 +1215,8 @@ ABHOLEN_HILFE = """sendung-abholen: Abholung einer Direktlieferung erfassen (Too
   cbtool.py sendung-abholen <PO> [<PO> ...] --datum YYYY-MM-DD [--amazon FBA…] [--spediteur <name>]
                             --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]
 
-  <PO>          eine oder mehrere Bestellungen ohne Konfektionierer mit demselben Ziel (wörtlich oder eindeutiger Anfang).
+  <PO>          eine oder mehrere Bestellungen ohne Konfektionierer mit demselben Ziel (wörtlich oder eindeutiger Anfang),
+                getrennt durch Leerzeichen oder Komma.
                 Sie reisen danach in einer Sendung; keine andere Bestellung darf ungenannt in dieser Sendung reisen.
   --datum       Abholtag beim Lieferanten, nicht in der Zukunft, nicht vor dem Bestelldatum
   --amazon      Amazon-Shipment-ID (FBA…): Pflicht bei Lieferung direkt an Amazon FBA, sonst weglassen
@@ -1224,7 +1225,8 @@ ABHOLEN_HILFE = """sendung-abholen: Abholung einer Direktlieferung erfassen (Too
   --grund       Pflicht, ein Satz (10 bis 300 Zeichen): warum die Abholung jetzt erfasst wird
   --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus dem Inhalt gebildet. Derselbe Befehl zweimal schreibt
                 nie doppelt.
-  --ausfuehren  eintragen. Ohne nur Vorschau: das Tool rechnet die Erfassung durch und schreibt nichts.
+  --ausfuehren  eintragen. Holt erst die Vorschau und schreibt dann mit deren Stand; hat sich seither etwas geändert,
+                schreibt das Tool nichts („Stand anders als in der Vorschau“). Ohne nur Vorschau, nichts geschrieben.
 
 Offene Bestellungen gehen auf „In Transit“; schon unterwegs oder angeliefert: nur Nachtrag (Amazon-ID, Tag). Kein Bestand,
 der Wareneingang bleibt „Angekommen“ bzw. bestellung-meilenstein --schritt eingang."""
@@ -1249,11 +1251,15 @@ def cmd_sendung_abholen(args: list[str]) -> None:
     if not args:
         _falsch("sendung-abholen braucht mindestens eine Bestellung, z. B. PO-032.")
     nummern = []
-    for a in args:
-        nr = a.strip()
-        if not re.match(r"^[A-Za-z0-9._-]+$", nr):
-            _falsch(f"„{a}“ ist keine gültige Nummer (erlaubt Buchstaben, Ziffern, Punkt, Binde- und Unterstrich).")
-        nummern.append(nr)
+    # Review K5: „PO-032,PO-033“ und „PO-032, PO-033“ gehen wie „PO-032 PO-033“.
+    for teil in [t.strip() for a in args for t in a.split(",")]:
+        if not teil:
+            continue
+        if not re.match(r"^[A-Za-z0-9._-]+$", teil):
+            _falsch(f"„{teil}“ ist keine gültige Nummer (erlaubt Buchstaben, Ziffern, Punkt, Binde- und Unterstrich).")
+        nummern.append(teil)
+    if not nummern:
+        _falsch("sendung-abholen braucht mindestens eine Bestellung, z. B. PO-032.")
     if len({n.lower() for n in nummern}) != len(nummern):
         _falsch("Jede Bestellung nur einmal nennen.")
     if len(nummern) > 20:
@@ -1290,16 +1296,17 @@ def cmd_sendung_abholen(args: list[str]) -> None:
                 raise SystemExit("Abholungen über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool erfassen (Bestellung › ⋯ › Abholung erfassen).")
             raise SystemExit(f"Nicht eingetragen: {text}")
 
-    if schluessel:
-        res = senden({**body, "idempotenz_schluessel": schluessel, "vorschau": not ausfuehren})
-    else:
-        # Erst die Vorschau: sie löst die Nummern auf („PO-032“ › volle Nummer). Der Schlüssel kommt aus dem Inhalt mit den
-        # vollen Nummern, damit Kurzform und volle Nummer dieselbe Meldung sind.
-        res = senden({**body, "vorschau": True})
-        if ausfuehren:
-            voll = [b.get("po") for b in (res.get("aenderung") or {}).get("bestellungen") or []] or nummern
-            key = _idempotenz({"tuer": "sendung_abholen", **body, "bestellungen": voll})
-            res = senden({**body, "idempotenz_schluessel": key, "vorschau": False})
+    # Immer erst die Vorschau: sie löst die Nummern auf („PO-032“ › volle Nummer) und liefert den Status je Bestellung.
+    # Beim Schreiben geht dieser Stand als `erwartet` mit (Review K1): hat sich seither etwas geändert, bucht das Tool nichts.
+    # Der Schlüssel kommt aus dem Inhalt mit den vollen Nummern, damit Kurzform und volle Nummer dieselbe Meldung sind.
+    res = senden({**body, "vorschau": True, **({"idempotenz_schluessel": schluessel} if schluessel else {})})
+    vorschau = res.get("aenderung") or {}
+    if ausfuehren and not vorschau.get("wiederholt"):
+        zeilen = vorschau.get("bestellungen") or []
+        voll = [b.get("po") for b in zeilen] or nummern
+        erwartet = {b.get("po"): b.get("statusVorher") for b in zeilen if b.get("po") and b.get("statusVorher")}
+        key = schluessel or _idempotenz({"tuer": "sendung_abholen", **body, "bestellungen": voll})
+        res = senden({**body, "idempotenz_schluessel": key, "vorschau": False, "erwartet": erwartet})
     a = res.get("aenderung") or {}
     amazon_txt = f" als {a['amazonShipmentId']}" if a.get("amazonShipmentId") else ""
     kopf = f"Abholung {_datum_text(a.get('abgeholtAm'), voll=True)}{amazon_txt}"
