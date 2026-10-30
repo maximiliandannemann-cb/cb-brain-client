@@ -52,6 +52,10 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    [--standort <code>] [--schluessel <id>] [--ausfuehren]
                                    Meilenstein oder Wareneingang melden. Ohne --ausfuehren nur Vorschau (nichts
                                    geschrieben); mit --ausfuehren eintragen, nur nach Ja der Person. Hilfe: --help
+          cbtool.py einsendung-status IN-2026-0046 --schritt abgeholt|eingebucht --datum YYYY-MM-DD
+                                   --beleg <satz> --grund <satz> [--schluessel <id>] [--ausfuehren]
+                                   Einsendung als abgeholt oder eingebucht melden (bucht wie im Tool). Ohne
+                                   --ausfuehren nur Vorschau; mit --ausfuehren eintragen, nur nach Ja. Hilfe: --help
 
 Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <art>|fakten]
                           [--ref PO-032|CB-123|IN-…|J-12] [--bereich <b>] [--limit <n>]
@@ -1106,6 +1110,102 @@ def cmd_bestellung_meilenstein(args: list[str]) -> None:
         print(f"Link: {a['link']}")
 
 
+EINSENDUNG_HILFE = """einsendung-status: Einsendung als abgeholt oder eingebucht melden (Tool-Tür E, 30.10.2026).
+
+  cbtool.py einsendung-status <IN-Nummer oder Amazon-ID> --schritt abgeholt|eingebucht --datum YYYY-MM-DD
+                              --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]
+
+  --schritt     abgeholt (Abgang aus dem Lager in den Transit) oder eingebucht (bei Amazon angekommen). Nur vorwärts,
+                ein Schritt nach dem anderen: erst abgeholt, dann eingebucht.
+  --datum       wann es passiert ist, nicht in der Zukunft; eingebucht nicht vor dem Abholtag
+  --beleg       Pflicht, 10 bis 500 Zeichen: woher die Information kommt, z. B.
+                "Seller Central 30.10., FBA15MQCMGNC Receiving 3.521/3.920" oder ein Mail-Link
+  --grund       Pflicht, ein Satz (10 bis 300 Zeichen): warum die Einsendung jetzt so steht
+  --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus dem Inhalt gebildet. Derselbe Befehl zweimal bucht
+                nie doppelt.
+  --ausfuehren  eintragen. Ohne nur Vorschau: das Tool rechnet die Buchung durch und schreibt nichts.
+
+Gebucht wird immer die volle Menge der Positionen, wie im Tool. Was Amazon schon gezählt hat, gehört in den Beleg.
+Rückwärts, Abschließen, Mengen und Stornos gehen nur im Tool."""
+EINSENDUNG_SCHRITTE = ("abgeholt", "eingebucht")
+GRUND_MIN, GRUND_MAX = 10, 300  # wie im Tool (src/lib/einsendung-schluessel.ts)
+
+
+def cmd_einsendung_status(args: list[str]) -> None:
+    """Einsendung abgeholt/eingebucht melden (POST /einsendungen/<nr>/status). Standard: Vorschau; --ausfuehren schreibt."""
+    if "--help" in args or "-h" in args:
+        print(EINSENDUNG_HILFE)
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    schritt = _wert(args, "--schritt")
+    datum = _wert(args, "--datum")
+    beleg_roh = _wert(args, "--beleg")
+    grund_roh = _wert(args, "--grund")
+    schluessel = _wert(args, "--schluessel")
+    if "--menge" in args:
+        _falsch("--menge gibt es hier nicht: Abholen und Einbuchen buchen immer die volle Menge, wie im Tool. Was Amazon schon gezählt hat, gehört in --beleg.")
+    nr = _ref(args, "einsendung-status", "IN-2026-0046")
+    if schritt is None or schritt.strip().lower() not in EINSENDUNG_SCHRITTE:
+        _falsch("--schritt erwartet abgeholt oder eingebucht.")
+    schritt = schritt.strip().lower()
+    if datum is None:
+        _falsch("einsendung-status braucht --datum YYYY-MM-DD.")
+    _tag_param(datum, "--datum")
+    if datum > _heute_berlin():
+        _falsch(f"Das Datum {_datum_text(datum, voll=True)} liegt in der Zukunft. Gemeldet wird, was passiert ist.")
+    beleg = _beleg(beleg_roh)
+    grund = re.sub(r"\s*[\r\n]+\s*", " ", grund_roh or "").strip()
+    if len(grund) < GRUND_MIN:
+        _falsch(f"--grund fehlt oder ist zu kurz: ein Satz, warum die Einsendung jetzt so steht ({GRUND_MIN} bis {GRUND_MAX} Zeichen).")
+    if len(grund) > GRUND_MAX:
+        _falsch(f"--grund darf höchstens {GRUND_MAX} Zeichen lang sein.")
+    if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
+        _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
+    body = {"schritt": schritt, "datum": datum, "beleg": beleg, "grund": grund}
+
+    def senden(b: dict) -> dict:
+        try:
+            return call(f"{LESEN}/einsendungen/{nr}/status", b, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
+        except SystemExit as e:
+            text = str(e.code)
+            if text == "Tool antwortet 404.":  # Route fehlt (älteres Tool)
+                raise SystemExit("Einsendungs-Status über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool eintragen (Einsendung › Status).")
+            raise SystemExit(f"Nicht eingetragen: {text}")
+
+    if schluessel:
+        res = senden({**body, "idempotenz_schluessel": schluessel, "vorschau": not ausfuehren})
+    else:
+        # Erst die Vorschau: sie löst die Nummer auf (Amazon-ID › IN-Nummer). Der Schlüssel kommt aus dem Inhalt mit der
+        # IN-Nummer, damit beide Schreibweisen dieselbe Meldung sind.
+        res = senden({**body, "vorschau": True})
+        if ausfuehren:
+            voll = (res.get("aenderung") or {}).get("einsendung") or urllib.parse.unquote(nr)
+            key = _idempotenz({"tuer": "einsendung_status", "einsendung": voll, **body})
+            res = senden({**body, "idempotenz_schluessel": key, "vorschau": False})
+    a = res.get("aenderung") or {}
+    amazon = f" ({a['amazonShipmentId']})" if a.get("amazonShipmentId") else ""
+    kopf = f"{a.get('einsendung')}{amazon} · {a.get('schrittText')} am {_datum_text(a.get('datum'), voll=True)}"
+    if a.get("wiederholt"):
+        print(f"Schon eingetragen (gleiche Meldung, {_datum_text((a.get('gebuchtAm') or '')[:10], voll=True)}): {kopf}. Nichts neu geschrieben.")
+    elif a.get("vorschau"):
+        print(f"Vorschau, nichts geschrieben: {kopf}")
+    else:
+        print(f"Eingetragen: {kopf}")
+    if a.get("statusVorher") != a.get("statusNachher"):
+        print(f"Status: {a.get('statusVorherText') or a.get('statusVorher')} › {a.get('statusNachherText') or a.get('statusNachher')}")
+    for b in a.get("bewegungenNeu") or []:
+        menge = b.get("menge") or 0
+        zeichen = "+" if menge > 0 else "−"
+        print(f"  {b.get('text')}: {b.get('sku')} {zeichen}{_n(abs(menge))} St. {b.get('standort')} am {_datum_text(b.get('datum'), voll=True)}"
+              f", bestandswirksam {JA_NEIN[bool(b.get('bestandswirksam'))]}")
+    print(f"Beleg: {a.get('beleg')}")
+    print(f"Grund: {a.get('grund')}")
+    if a.get("vorschau") and not a.get("wiederholt"):
+        print("Zum Eintragen denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person.")
+    if a.get("link"):
+        print(f"Link: {a['link']}")
+
+
 # ---- Sendungen
 
 def _sendung_zeile(s: dict) -> str:
@@ -1366,6 +1466,7 @@ WARE = {
     "bestellung": cmd_bestellung,
     "bestellung-eta": cmd_bestellung_eta,
     "bestellung-meilenstein": cmd_bestellung_meilenstein,
+    "einsendung-status": cmd_einsendung_status,
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,
