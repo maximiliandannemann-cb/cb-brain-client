@@ -4,9 +4,10 @@
 
 - Neu: `cbtool.py einsendung-status IN-2026-0046 --schritt abgeholt|eingebucht --datum YYYY-MM-DD --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]`. Meldet eine Einsendung als abgeholt oder eingebucht, gebucht wie im Tool (Abgang ins Transit, Einbuchen bei Amazon). Nummer oder Amazon-Shipment-ID. Ohne `--ausfuehren` nur Vorschau, nichts geschrieben. `--help` zeigt alle Felder.
 - `--beleg` (10 bis 500 Zeichen) und `--grund` (ein Satz, 10 bis 300 Zeichen) sind Pflicht; beides steht im Protokoll des Tools und an den Bewegungen. Der Idempotenz-Schlüssel kommt aus dem Inhalt mit der IN-Nummer: derselbe Befehl zweimal bucht nie doppelt. Lokal abgelehnt, ohne zu senden: Datum in der Zukunft, `--menge` (gibt es hier nicht), Beleg oder Grund zu kurz oder zu lang. Das Tool lehnt ab: rückwärts, schon abgeholt oder eingebucht, eingebucht vor der Abholung, Konten ohne Recht.
-- `/ware`: Abschnitt „Einsendung abgeholt oder eingebucht melden“.
-- Prüfskript `tests/pruefe-einsendung.py`.
-- Braucht das Tool mit der Route `/api/brain-read/einsendungen/<nr>/status` und der Migration `2026-10-30-einsendung-tuer.sql` (company-interface, Branch `lauf/einsendung-tuer`). Davor sagt der Befehl „gibt es im Tool noch nicht“ bzw. „noch nicht freigeschaltet“ und schreibt nichts.
+- Neu: `cbtool.py sendung-abholen PO-032 [PO-033 …] --datum YYYY-MM-DD [--amazon FBA…] [--spediteur <name>] --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]`. Erfasst die Abholung einer Direktlieferung wie „Abholung erfassen“ im Tool: Bestellungen in eine Sendung, Amazon-ID, Abholtag, offene auf „In Transit“, angelieferte nur Nachtrag. Vorschau zuerst, Schlüssel aus dem Inhalt mit den vollen Nummern. Lokal abgelehnt: keine oder doppelte Bestellung, Datum in der Zukunft, Amazon-ID falsch, Beleg oder Grund fehlt, unbekannte Option. Braucht Tür T4 im Tool (company-interface, Branch `lauf/sendung-abholen`, Migration `2026-10-30-sendung-abholen.sql`).
+- `/ware`: Abschnitte „Einsendung abgeholt oder eingebucht melden“ und „Abholung einer Direktlieferung erfassen“.
+- Prüfskripte `tests/pruefe-einsendung.py` und `tests/pruefe-abholen.py`.
+- `einsendung-status` braucht das Tool mit der Route `/api/brain-read/einsendungen/<nr>/status` und der Migration `2026-10-30-einsendung-tuer.sql` (company-interface, Branch `lauf/einsendung-tuer`). Davor sagt der Befehl „gibt es im Tool noch nicht“ bzw. „noch nicht freigeschaltet“ und schreibt nichts.
 
 ## 0.11.0 (29.10.2026)
 

@@ -56,6 +56,10 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    --beleg <satz> --grund <satz> [--schluessel <id>] [--ausfuehren]
                                    Einsendung als abgeholt oder eingebucht melden (bucht wie im Tool). Ohne
                                    --ausfuehren nur Vorschau; mit --ausfuehren eintragen, nur nach Ja. Hilfe: --help
+          cbtool.py sendung-abholen PO-032 [PO-033 ...] --datum YYYY-MM-DD [--amazon FBA…] [--spediteur <name>]
+                                   --beleg <satz> --grund <satz> [--schluessel <id>] [--ausfuehren]
+                                   Abholung einer Direktlieferung erfassen (wie „Abholung erfassen“ im Tool). Ohne
+                                   --ausfuehren nur Vorschau; mit --ausfuehren eintragen, nur nach Ja. Hilfe: --help
 
 Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <art>|fakten]
                           [--ref PO-032|CB-123|IN-…|J-12] [--bereich <b>] [--limit <n>]
@@ -1206,6 +1210,121 @@ def cmd_einsendung_status(args: list[str]) -> None:
         print(f"Link: {a['link']}")
 
 
+ABHOLEN_HILFE = """sendung-abholen: Abholung einer Direktlieferung erfassen (Tool-Tür T4, 30.10.2026).
+
+  cbtool.py sendung-abholen <PO> [<PO> ...] --datum YYYY-MM-DD [--amazon FBA…] [--spediteur <name>]
+                            --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]
+
+  <PO>          eine oder mehrere Bestellungen ohne Konfektionierer mit demselben Ziel (wörtlich oder eindeutiger Anfang).
+                Sie reisen danach in einer Sendung; keine andere Bestellung darf ungenannt in dieser Sendung reisen.
+  --datum       Abholtag beim Lieferanten, nicht in der Zukunft, nicht vor dem Bestelldatum
+  --amazon      Amazon-Shipment-ID (FBA…): Pflicht bei Lieferung direkt an Amazon FBA, sonst weglassen
+  --spediteur   Name einer Spedition aus dem Tool; ohne bleibt der Spediteur der Sendung
+  --beleg       Pflicht, 10 bis 500 Zeichen: woher die Information kommt, z. B. "Seller Central 30.10., FBA15MP34324"
+  --grund       Pflicht, ein Satz (10 bis 300 Zeichen): warum die Abholung jetzt erfasst wird
+  --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus dem Inhalt gebildet. Derselbe Befehl zweimal schreibt
+                nie doppelt.
+  --ausfuehren  eintragen. Ohne nur Vorschau: das Tool rechnet die Erfassung durch und schreibt nichts.
+
+Offene Bestellungen gehen auf „In Transit“; schon unterwegs oder angeliefert: nur Nachtrag (Amazon-ID, Tag). Kein Bestand,
+der Wareneingang bleibt „Angekommen“ bzw. bestellung-meilenstein --schritt eingang."""
+AMAZON_RE = re.compile(r"^FBA[0-9A-Z]{6,12}$")
+
+
+def cmd_sendung_abholen(args: list[str]) -> None:
+    """Abholung erfassen (POST /sendungen/abholen). Standard: Vorschau; --ausfuehren schreibt."""
+    if "--help" in args or "-h" in args:
+        print(ABHOLEN_HILFE)
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    datum = _wert(args, "--datum")
+    amazon = _wert(args, "--amazon")
+    spediteur = _wert(args, "--spediteur")
+    beleg_roh = _wert(args, "--beleg")
+    grund_roh = _wert(args, "--grund")
+    schluessel = _wert(args, "--schluessel")
+    unbekannt = [a for a in args if a.startswith("--")]
+    if unbekannt:
+        _falsch(f"Unbekannt: {' '.join(unbekannt)}. --help zeigt alle Felder.")
+    if not args:
+        _falsch("sendung-abholen braucht mindestens eine Bestellung, z. B. PO-032.")
+    nummern = []
+    for a in args:
+        nr = a.strip()
+        if not re.match(r"^[A-Za-z0-9._-]+$", nr):
+            _falsch(f"„{a}“ ist keine gültige Nummer (erlaubt Buchstaben, Ziffern, Punkt, Binde- und Unterstrich).")
+        nummern.append(nr)
+    if len({n.lower() for n in nummern}) != len(nummern):
+        _falsch("Jede Bestellung nur einmal nennen.")
+    if len(nummern) > 20:
+        _falsch("Höchstens 20 Bestellungen je Abholung.")
+    if datum is None:
+        _falsch("sendung-abholen braucht --datum YYYY-MM-DD (Abholtag).")
+    _tag_param(datum, "--datum")
+    if datum > _heute_berlin():
+        _falsch(f"Das Abholdatum {_datum_text(datum, voll=True)} liegt in der Zukunft. Erfasst wird, was passiert ist.")
+    if amazon is not None:
+        amazon = amazon.strip().upper()
+        if not AMAZON_RE.match(amazon):
+            _falsch(f"--amazon erwartet eine Amazon-Shipment-ID wie FBA15MP34324, nicht „{amazon}“.")
+    beleg = _beleg(beleg_roh)
+    grund = re.sub(r"\s*[\r\n]+\s*", " ", grund_roh or "").strip()
+    if len(grund) < GRUND_MIN:
+        _falsch(f"--grund fehlt oder ist zu kurz: ein Satz, warum die Abholung jetzt erfasst wird ({GRUND_MIN} bis {GRUND_MAX} Zeichen).")
+    if len(grund) > GRUND_MAX:
+        _falsch(f"--grund darf höchstens {GRUND_MAX} Zeichen lang sein.")
+    if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
+        _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
+    body = {"bestellungen": nummern, "datum": datum, "beleg": beleg, "grund": grund}
+    if amazon:
+        body["amazon_shipment_id"] = amazon
+    if spediteur is not None:
+        body["spediteur"] = spediteur.strip()
+
+    def senden(b: dict) -> dict:
+        try:
+            return call(f"{LESEN}/sendungen/abholen", b, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
+        except SystemExit as e:
+            text = str(e.code)
+            if text == "Tool antwortet 404." or text == "Tool antwortet 405.":  # Route fehlt (älteres Tool)
+                raise SystemExit("Abholungen über den Schlüssel gibt es im Tool noch nicht. Bitte im Tool erfassen (Bestellung › ⋯ › Abholung erfassen).")
+            raise SystemExit(f"Nicht eingetragen: {text}")
+
+    if schluessel:
+        res = senden({**body, "idempotenz_schluessel": schluessel, "vorschau": not ausfuehren})
+    else:
+        # Erst die Vorschau: sie löst die Nummern auf („PO-032“ › volle Nummer). Der Schlüssel kommt aus dem Inhalt mit den
+        # vollen Nummern, damit Kurzform und volle Nummer dieselbe Meldung sind.
+        res = senden({**body, "vorschau": True})
+        if ausfuehren:
+            voll = [b.get("po") for b in (res.get("aenderung") or {}).get("bestellungen") or []] or nummern
+            key = _idempotenz({"tuer": "sendung_abholen", **body, "bestellungen": voll})
+            res = senden({**body, "idempotenz_schluessel": key, "vorschau": False})
+    a = res.get("aenderung") or {}
+    amazon_txt = f" als {a['amazonShipmentId']}" if a.get("amazonShipmentId") else ""
+    kopf = f"Abholung {_datum_text(a.get('abgeholtAm'), voll=True)}{amazon_txt}"
+    if a.get("wiederholt"):
+        print(f"Schon eingetragen (gleiche Meldung, {_datum_text((a.get('gebuchtAm') or '')[:10], voll=True)}): {kopf}. Nichts neu geschrieben.")
+    elif a.get("vorschau"):
+        print(f"Vorschau, nichts geschrieben: {kopf}")
+    else:
+        print(f"Eingetragen: {kopf}")
+    for b in a.get("bestellungen") or []:
+        wechsel = f"{b.get('statusVorherText')} › {b.get('statusNachherText')}" if b.get("statusVorher") != b.get("statusNachher") else f"{b.get('statusNachherText')} (nur Nachtrag)"
+        um = ", in diese Sendung gelegt" if b.get("umgehaengt") else ""
+        print(f"  {b.get('po')}: {wechsel}{um}")
+    if a.get("spediteur"):
+        print(f"Spediteur: {a['spediteur']}")
+    if a.get("sendung"):
+        print("Sendung danach: " + ", ".join(a["sendung"]))
+    print(f"Beleg: {a.get('beleg')}")
+    print(f"Grund: {a.get('grund')}")
+    if a.get("vorschau") and not a.get("wiederholt"):
+        print("Zum Eintragen denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person.")
+    if a.get("link"):
+        print(f"Link: {a['link']}")
+
+
 # ---- Sendungen
 
 def _sendung_zeile(s: dict) -> str:
@@ -1467,6 +1586,7 @@ WARE = {
     "bestellung-eta": cmd_bestellung_eta,
     "bestellung-meilenstein": cmd_bestellung_meilenstein,
     "einsendung-status": cmd_einsendung_status,
+    "sendung-abholen": cmd_sendung_abholen,
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,
