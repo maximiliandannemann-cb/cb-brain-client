@@ -1768,7 +1768,8 @@ def _kontakt_text(r: dict) -> None:
         for z in zu:
             name = z.get("name") or "?"
             extra = ", ".join(x for x in (z.get("rechtlicher_name"), z.get("rolle"), z.get("land")) if x)
-            print(f"Bekannt im Tool: {name}" + (f" ({extra})" if extra else "") + f" · über {z.get('ueber')} · {z.get('link')}")
+            kopf = "Bekannt im Tool" if r.get("bekannt_im_tool") else "Zugeordnet (unsicher)"
+            print(f"{kopf}: {name}" + (f" ({extra})" if extra else "") + f" · über {z.get('ueber')} · {z.get('link')}")
     else:
         print("Im Tool unbekannt (kein Lieferant oder Partner passt).")
     if zu and not r.get("bekannt_im_tool"):

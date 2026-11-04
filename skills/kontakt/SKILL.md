@@ -25,7 +25,7 @@ Aufruf: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" kontakt <adresse|doma
 
 ## Was die Antwort sagt
 
-- `Bekannt im Tool: <Name> · über kontakt-mail|domain|name`: wie die Zuordnung zustande kam. `name` heißt: kein Kontakt mit dieser Mail im Tool, nur der Firmenname ist gleich, also unsicher (siehe Schritt 3).
+- `Bekannt im Tool: <Name> · über kontakt-mail|domain` bzw. `Zugeordnet (unsicher): <Name> · über name`: wie die Zuordnung zustande kam. `name` heißt: kein Kontakt mit dieser Mail im Tool, nur der Name ist gleich, also unsicher (siehe Schritt 3).
 - `N Partner passen (…). Mit adresse= oder genauerer firma= eingrenzen.`: mit der vollen Adresse oder einem genaueren Namen erneut fragen.
 - `Journal gerade nicht ladbar, Antwort ohne Journal-Zeilen.`: Journal fehlt nur diesmal; die Mail-Suche reicht für die Anrede.
 - Eine Domain eines Freemail-Anbieters (gmail.com, mail.163.com) oder eine reine Endung (com.cn) lehnt das Tool ab: mit der vollen Adresse fragen.

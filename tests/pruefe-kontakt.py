@@ -118,6 +118,7 @@ pruefe("Journal null: kein Zugang", "Journal: kein Zugang für dieses Konto." in
 antwort["json"] = {**ANTWORT, "bekannt_im_tool": False, "anrede": "Zuordnung nur über den Namen, unsicher. Erst mail_suche prüfen: mit Treffern auf den letzten Austausch Bezug nehmen, ohne Treffer kurz vorstellen."}
 code, out, a = lauf("kontakt", ["fillhub.de"])
 pruefe("Namensweg: Achtung-Zeile, nie „keine Vorstellung“", "Achtung: nur über den Namen zugeordnet, unsicher" in out and "keine Vorstellung" not in out)
+pruefe("Namensweg: Kopf „Zugeordnet (unsicher):“, nie „Bekannt im Tool“", "Zugeordnet (unsicher): Fillhub (warehouse) · über name" in out and "Bekannt im Tool" not in out)
 antwort["json"] = {**ANTWORT, "journal": None, "luecken": ["Journal gerade nicht ladbar, Antwort ohne Journal-Zeilen."]}
 code, out, a = lauf("kontakt", ["fillhub.de"])
 pruefe("Journal-Fehler: nicht als „kein Zugang“, Lücke genannt", "kein Zugang" not in out and "Lücke: Journal gerade nicht ladbar" in out)
