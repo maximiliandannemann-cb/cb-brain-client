@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0 (04.11.2026)
+
+- Neu: `/kontakt` und `cbtool.py kontakt <adresse|domain|firma> [--json]`. Kontaktgeschichte vor jeder Mail: das Tool ordnet die Adresse, Domain oder Firma einem Lieferanten oder Partner zu (über Kontakt-Mail, Domain, Firmenname) und nennt offene Bestellungen und Sendungen, die letzten Journal-Zeilen, die Wiki-Seite und die fertige Gmail-Suche `mail_suche`. Das Tool liest keine Mails: die Suche führt jeder mit seiner eigenen Gmail-Verbindung aus.
+- Skill `skills/kontakt/SKILL.md`: vor jeder Mail Pflicht, auch bei Serien je Empfänger; bekannt (Tool oder Mail-Treffer) heißt keine Vorstellung; nach dem Entwurf die Anrede prüfen.
+- Prüfskript `tests/pruefe-kontakt.py`.
+- Braucht das Tool mit der Route `/api/brain-read/kontakt` (company-interface, Branch `feat/kontaktgeschichte`). Davor sagt der Befehl „gibt es im Tool noch nicht“ und nennt die Ersatz-Suche.
+
 ## 0.12.0 (30.10.2026)
 
 - Neu: `cbtool.py einsendung-status IN-2026-0046 --schritt abgeholt|eingebucht --datum YYYY-MM-DD --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]`. Meldet eine Einsendung als abgeholt oder eingebucht, gebucht wie im Tool (Abgang ins Transit, Einbuchen bei Amazon). Nummer oder Amazon-Shipment-ID. Ohne `--ausfuehren` nur Vorschau, nichts geschrieben. `--help` zeigt alle Felder.
