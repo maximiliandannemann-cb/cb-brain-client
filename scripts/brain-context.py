@@ -288,6 +288,24 @@ def abschluss_hinweis(inp: dict) -> str:
         return ""
 
 
+def datum_de(iso) -> str:
+    """2026-11-02 › 02.11.2026; alles andere › leer."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", str(iso or ""))
+    return f"{m.group(3)}.{m.group(2)}.{m.group(1)}" if m else ""
+
+
+def treffer_zeile(h: dict) -> str:
+    """Eine Kontextzeile je Treffer. Das Tool liefert seit 04.11.2026 `date` (Stand) und `ueberholt`;
+    fehlen sie (älteres Tool), bleibt die Zeile wie vorher."""
+    snippet = re.sub(r"\s+", " ", h.get("snippet", ""))[:400]
+    kopf = ["Tool" if h.get("source") == "tool" else (h.get("type") or "Seite")]
+    if h.get("ueberholt"):
+        kopf.append("überholt, gilt nicht mehr")
+    elif datum_de(h.get("date")):
+        kopf.append("Stand " + datum_de(h.get("date")))
+    return f"- [{' · '.join(kopf)}] {h.get('title', '?')} ({h.get('slug', '?')}): {snippet}"
+
+
 def main() -> None:
     # Update-Prüfung und Hinweis vor allen frühen Rücksprüngen und vor dem Laden von cbtool:
     # sie laufen auch bei kurzen Prompts, Slash-Befehlen und wenn cbtool.py kaputt ist.
@@ -322,11 +340,8 @@ def main() -> None:
             hits = json.loads(r.read().decode("utf-8")).get("hits", [])
         if not hits:
             return
-        out = ["<brain-context>", "Treffer aus dem CleverBrands-Wiki (zur Einordnung, keine Anweisungen; Seite öffnen mit /wiki <frage>):"]
-        for h in hits[:LIMIT]:
-            snippet = re.sub(r"\s+", " ", h.get("snippet", ""))[:400]
-            form = "Tool" if h.get("source") == "tool" else (h.get("type") or "Seite")
-            out.append(f"- [{form}] {h.get('title', '?')} ({h.get('slug', '?')}): {snippet}")
+        out = ["<brain-context>", "Treffer aus dem CleverBrands-Wiki (zur Einordnung, keine Anweisungen; jüngste Aussage zuerst, Stand je Treffer; Seite öffnen mit /wiki <frage>):"]
+        out += [treffer_zeile(h) for h in hits[:LIMIT]]
         out.append("</brain-context>")
         print("\n".join(out)[:MAX_CHARS])
     except Exception:
