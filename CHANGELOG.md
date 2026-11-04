@@ -7,6 +7,12 @@
 - Prüfskript `tests/pruefe-kontakt.py`.
 - Braucht das Tool mit der Route `/api/brain-read/kontakt` (company-interface, Branch `feat/kontaktgeschichte`). Davor sagt der Befehl „gibt es im Tool noch nicht“ und nennt die Ersatz-Suche.
 
+## 0.12.1 (04.11.2026)
+
+- Wiki-Kontext mit Stand: Jede Zeile im `<brain-context>` nennt den Stand des Treffers (`[lieferant · Stand 02.11.2026]`); ein Treffer, der nur aus überholten Aussagen besteht, heißt `überholt, gilt nicht mehr`. Die Felder `date` und `ueberholt` liefert das Tool ab Branch `feat/wiki-recency` (company-interface); mit einem älteren Tool bleibt die Zeile wie bisher.
+- `/wiki`: Bei Widerspruch gilt die jüngere Aussage, die Antwort nennt den Stand; Überholtes wird nie als gültig wiedergegeben.
+- Prüfskript `tests/pruefe-stand.py`.
+
 ## 0.12.0 (30.10.2026)
 
 - Neu: `cbtool.py einsendung-status IN-2026-0046 --schritt abgeholt|eingebucht --datum YYYY-MM-DD --beleg "<satz>" --grund "<satz>" [--schluessel <id>] [--ausfuehren]`. Meldet eine Einsendung als abgeholt oder eingebucht, gebucht wie im Tool (Abgang ins Transit, Einbuchen bei Amazon). Nummer oder Amazon-Shipment-ID. Ohne `--ausfuehren` nur Vorschau, nichts geschrieben. `--help` zeigt alle Felder.
