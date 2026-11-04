@@ -100,7 +100,7 @@ pruefe("GET /api/brain-read/kontakt?domain=fillhub.de", code == 0 and a["methode
 pruefe("Ausgabe: bekannt, Anrede, Mail-Suche wörtlich", "Bekannt im Tool: Fillhub (warehouse) · über name" in out and "keine Vorstellung" in out
        and "Mail-Suche (mit der eigenen Gmail-Verbindung ausführen): in:anywhere (from:@fillhub.de OR to:@fillhub.de)" in out)
 pruefe("Ausgabe: Nummern wörtlich, ETA deutsch", "Offen: PO-020-1-1-B-22-LS-SET · Lavendelsäckchen Basic (22 Stück) · Fertig, liegt 12 T · ETA 20.11." in out and "Offen: IN-2026-0050 · Labels versendet · von Fillhub" in out)
-pruefe("Ausgabe: Journal, Wiki, Lücke, weitere", "J-368 · 04.11." in out and "Wiki: Fillhub ·" in out and "Stammdaten-Lücke: Fillhub: Kontakt ohne Mail-Adresse." in out and "und 2 weitere offene" in out)
+pruefe("Ausgabe: Journal, Wiki, Lücke, weitere", "J-368 · 04.11." in out and "Wiki: Fillhub ·" in out and "Lücke: Fillhub: Kontakt ohne Mail-Adresse." in out and "und 2 weitere offene" in out)
 code, out, a = lauf("kontakt", ["Glue Tec GmbH"])
 pruefe("Firma mit Leerzeichen als firma=", query(a) == {"firma": "Glue Tec GmbH"})
 code, out, a = lauf("kontakt", ["Pia@Fillhub.de", "--json"])
@@ -113,6 +113,17 @@ pruefe("unbekannt: Satz und trotzdem Suche", "Im Tool unbekannt" in out and "Ers
 antwort["json"] = {**ANTWORT, "journal": None}
 code, out, a = lauf("kontakt", ["fillhub.de"])
 pruefe("Journal null: kein Zugang", "Journal: kein Zugang für dieses Konto." in out)
+
+# --- Namensweg unsicher (Review B1), Journal-Fehler (K3)
+antwort["json"] = {**ANTWORT, "bekannt_im_tool": False, "anrede": "Zuordnung nur über den Namen, unsicher. Erst mail_suche prüfen: mit Treffern auf den letzten Austausch Bezug nehmen, ohne Treffer kurz vorstellen."}
+code, out, a = lauf("kontakt", ["fillhub.de"])
+pruefe("Namensweg: Achtung-Zeile, nie „keine Vorstellung“", "Achtung: nur über den Namen zugeordnet, unsicher" in out and "keine Vorstellung" not in out)
+antwort["json"] = {**ANTWORT, "journal": None, "luecken": ["Journal gerade nicht ladbar, Antwort ohne Journal-Zeilen."]}
+code, out, a = lauf("kontakt", ["fillhub.de"])
+pruefe("Journal-Fehler: nicht als „kein Zugang“, Lücke genannt", "kein Zugang" not in out and "Lücke: Journal gerade nicht ladbar" in out)
+for eingabe in ("a<b@x.de", "a,b@x.de"):
+    pruefe(f"K1: {eingabe} ist keine Adresse", cb.kontakt_param(eingabe)[0] != "adresse")
+pruefe("K1: plus-Adresse ok", cb.kontakt_param("first.last+tag@x-y.de") == ("adresse", "first.last+tag@x-y.de"))
 
 # --- Bedienfehler
 for name, args in [("ohne Angabe", []), ("zwei Angaben", ["a.de", "b.de"]), ("Option statt Angabe", ["--domain"])]:

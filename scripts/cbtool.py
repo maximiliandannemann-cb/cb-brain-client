@@ -1747,7 +1747,7 @@ JOURNAL_BEFEHLE = {
 
 KONTAKT = "/api/brain-read/kontakt"
 KONTAKT_FEHLT = "Die Kontakt-Abfrage gibt es im Tool noch nicht (Route /api/brain-read/kontakt fehlt). Bis dahin die Mail-Suche selbst bauen: in:anywhere (from:@domain OR to:@domain)."
-_ADRESSE_RE = re.compile(r"^[^\s@<>()\",;]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$")
+_ADRESSE_RE = re.compile(r"^[a-z0-9._%+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$")  # wie im Tool (kontakt-core.ts)
 _DOMAIN_RE = re.compile(r"^@?(https?://)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(/.*)?$")
 
 
@@ -1771,6 +1771,8 @@ def _kontakt_text(r: dict) -> None:
             print(f"Bekannt im Tool: {name}" + (f" ({extra})" if extra else "") + f" · über {z.get('ueber')} · {z.get('link')}")
     else:
         print("Im Tool unbekannt (kein Lieferant oder Partner passt).")
+    if zu and not r.get("bekannt_im_tool"):
+        print("Achtung: nur über den Namen zugeordnet, unsicher. Die Mail-Suche entscheidet.")
     print(r.get("anrede") or "")
     print(f"Mail-Suche (mit der eigenen Gmail-Verbindung ausführen): {r.get('mail_suche')}")
     ks = r.get("kontakte") or []
@@ -1785,7 +1787,9 @@ def _kontakt_text(r: dict) -> None:
         print(f"  und {offen['weitere']} weitere offene")
     j = r.get("journal")
     if j is None:
-        print("Journal: kein Zugang für dieses Konto.")
+        # null heißt kein Zugang oder Ladefehler; den Fehler nennt das Tool in `luecken` (unten ausgegeben).
+        if not any(l.startswith("Journal gerade nicht ladbar") for l in r.get("luecken") or []):
+            print("Journal: kein Zugang für dieses Konto.")
     elif j:
         print("Letzte Journal-Zeilen:")
         for e in j:
@@ -1793,7 +1797,7 @@ def _kontakt_text(r: dict) -> None:
     if r.get("wiki"):
         print(f"Wiki: {r['wiki'].get('titel')} · {r['wiki'].get('link')}")
     for l in r.get("luecken") or []:
-        print(f"Stammdaten-Lücke: {l}")
+        print(f"Lücke: {l}")
     if r.get("hinweis"):
         print(r["hinweis"])
 
