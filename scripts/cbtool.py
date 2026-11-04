@@ -72,6 +72,10 @@ Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <ar
           --ref CB-123. Aufgaben-Ereignisse schreibt das Tool selbst, nie von Hand. Zusage: --faellig Pflicht. Ein
           wiederholter Befehl schreibt nicht doppelt (Schlüssel aus dem Inhalt und dem Tag).
 
+Kontakt:  cbtool.py kontakt <adresse|domain|firma> [--json]
+          Kontaktgeschichte vor jeder Mail: Zuordnung zu Lieferant/Partner, offene Bestellungen und Sendungen, letzte
+          Journal-Zeilen, Wiki-Seite und die fertige Gmail-Suche (mail_suche). Das Tool liest keine Mails: die Suche
+          führt jeder Bot mit seiner eigenen Gmail-Verbindung aus. Erkennt selbst: name@firma.de, firma.de, sonst Firma.
 Kasse:    cbtool.py kasse                                    Stand, eigene Meldungen, zu prüfende Meldungen
           cbtool.py kasse-melden --betrag 6,60 --datum YYYY-MM-DD --empfaenger <name> [--fuer <name>]
           cbtool.py kasse-widersprechen --meldung <nr> --grund <text>
@@ -1738,6 +1742,80 @@ JOURNAL_BEFEHLE = {
 }
 
 
+# ---------------------------------------------------------------- Kontakt: Kontaktgeschichte vor jeder Mail (Bauplan Bots Phase 2, 04.11.2026)
+# Das Tool ordnet zu und baut die Gmail-Suche (EINE Definition, kontakt-core.ts); Mails liest nur der Bot selbst.
+
+KONTAKT = "/api/brain-read/kontakt"
+KONTAKT_FEHLT = "Die Kontakt-Abfrage gibt es im Tool noch nicht (Route /api/brain-read/kontakt fehlt). Bis dahin die Mail-Suche selbst bauen: in:anywhere (from:@domain OR to:@domain)."
+_ADRESSE_RE = re.compile(r"^[a-z0-9._%+-]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$")  # wie im Tool (kontakt-core.ts)
+_DOMAIN_RE = re.compile(r"^@?(https?://)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(/.*)?$")
+
+
+def kontakt_param(eingabe: str) -> tuple[str, str]:
+    """„pia@fillhub.de“ › adresse, „fillhub.de“/„@fillhub.de“/„https://fillhub.de“ › domain, sonst firma."""
+    w = eingabe.strip()
+    k = re.sub(r"^mailto:", "", w.lower())
+    if _ADRESSE_RE.match(k):
+        return "adresse", k
+    if " " not in k and _DOMAIN_RE.match(k):
+        return "domain", k
+    return "firma", w
+
+
+def _kontakt_text(r: dict) -> None:
+    zu = r.get("zuordnung") or []
+    if zu:
+        for z in zu:
+            name = z.get("name") or "?"
+            extra = ", ".join(x for x in (z.get("rechtlicher_name"), z.get("rolle"), z.get("land")) if x)
+            kopf = "Bekannt im Tool" if r.get("bekannt_im_tool") else "Zugeordnet (unsicher)"
+            print(f"{kopf}: {name}" + (f" ({extra})" if extra else "") + f" · über {z.get('ueber')} · {z.get('link')}")
+    else:
+        print("Im Tool unbekannt (kein Lieferant oder Partner passt).")
+    if zu and not r.get("bekannt_im_tool"):
+        print("Achtung: nur über den Namen zugeordnet, unsicher. Die Mail-Suche entscheidet.")
+    print(r.get("anrede") or "")
+    print(f"Mail-Suche (mit der eigenen Gmail-Verbindung ausführen): {r.get('mail_suche')}")
+    ks = r.get("kontakte") or []
+    if ks:
+        print("Kontakte: " + "; ".join(f"{k.get('name') or '?'} <{k.get('email') or 'keine Mail'}>" + (f" ({k['kanal']})" if k.get("kanal") else "") for k in ks))
+    offen = r.get("offen") or {}
+    for b in offen.get("bestellungen") or []:
+        print(f"  Offen: {b['po']} · {b.get('produkt')} · {b.get('status')}" + (f" · ETA {_datum_text(b['eta'])}" if b.get("eta") else "") + (f" · {b['als']}" if b.get("als") else ""))
+    for s_ in offen.get("sendungen") or []:
+        print(f"  Offen: {s_['nr']} · {s_.get('status')} · von {s_.get('von')}" + (f" · ETA {_datum_text(s_['eta'])}" if s_.get("eta") else ""))
+    if offen.get("weitere"):
+        print(f"  und {offen['weitere']} weitere offene")
+    j = r.get("journal")
+    if j is None:
+        # null heißt kein Zugang oder Ladefehler; den Fehler nennt das Tool in `luecken` (unten ausgegeben).
+        if not any(l.startswith("Journal gerade nicht ladbar") for l in r.get("luecken") or []):
+            print("Journal: kein Zugang für dieses Konto.")
+    elif j:
+        print("Letzte Journal-Zeilen:")
+        for e in j:
+            print("  " + " · ".join(x for x in (e.get("nr"), _datum_text(e.get("am")), e.get("art"), e.get("text"), e.get("ref")) if x))
+    if r.get("wiki"):
+        print(f"Wiki: {r['wiki'].get('titel')} · {r['wiki'].get('link')}")
+    for l in r.get("luecken") or []:
+        print(f"Lücke: {l}")
+    if r.get("hinweis"):
+        print(r["hinweis"])
+
+
+def cmd_kontakt(args: list[str]) -> None:
+    """Kontaktgeschichte (GET /kontakt): vor jeder Mail an einen Kontakt, auch bei Serien je Empfänger."""
+    als_json = _schalter(args, "--json")
+    if len(args) != 1 or args[0].startswith("-"):
+        _falsch("kontakt erwartet genau eine Angabe: Mail-Adresse, Domain oder Firmenname, z. B. kontakt pia@fillhub.de.")
+    feld, wert = kontakt_param(args[0])
+    r = call(f"{KONTAKT}?{urllib.parse.urlencode({feld: wert})}", method="GET", timeout=TIMEOUT_LESEN, plain_errors=True, bei_404=KONTAKT_FEHLT)
+    if als_json:
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return
+    _kontakt_text(r)
+
+
 # ---------------------------------------------------------------- Kasse: Bruno-Kaffeekasse (Vertrag vertrag-kasse.md, 16.10.2026)
 # Das Skript rechnet nichts: Beträge, Fälligkeit, Zinsen und wer was darf entscheidet das Tool (kasse-core.ts).
 # Es liest keine Bilder und nimmt keine Dateien: Claude liest den Screenshot und übergibt nur Betrag, Datum, Empfänger.
@@ -2044,6 +2122,9 @@ def main(argv: list[str]) -> None:
     elif cmd in JOURNAL_BEFEHLE:
         HILFE = "Journal:"
         JOURNAL_BEFEHLE[cmd](args)
+    elif cmd == "kontakt":
+        HILFE = "Kontakt:"
+        cmd_kontakt(args)
     elif cmd in KASSE_BEFEHLE:
         HILFE = "Kasse:"
         KASSE_BEFEHLE[cmd](args)

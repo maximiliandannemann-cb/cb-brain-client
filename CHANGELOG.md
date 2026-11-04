@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.0 (04.11.2026)
+
+- Neu: `/kontakt` und `cbtool.py kontakt <adresse|domain|firma> [--json]`. Kontaktgeschichte vor jeder Mail: das Tool ordnet die Adresse, Domain oder Firma einem Lieferanten oder Partner zu (über Kontakt-Mail, Domain, Firmenname) und nennt offene Bestellungen und Sendungen, die letzten Journal-Zeilen, die Wiki-Seite und die fertige Gmail-Suche `mail_suche`. Das Tool liest keine Mails: die Suche führt jeder mit seiner eigenen Gmail-Verbindung aus.
+- Skill `skills/kontakt/SKILL.md`: vor jeder Mail Pflicht, auch bei Serien je Empfänger; bekannt (Tool oder Mail-Treffer) heißt keine Vorstellung; nach dem Entwurf die Anrede prüfen.
+- Prüfskript `tests/pruefe-kontakt.py`.
+- Braucht das Tool mit der Route `/api/brain-read/kontakt` (company-interface, Branch `feat/kontaktgeschichte`). Davor sagt der Befehl „gibt es im Tool noch nicht“ und nennt die Ersatz-Suche.
+
 ## 0.12.1 (04.11.2026)
 
 - Wiki-Kontext mit Stand: Jede Zeile im `<brain-context>` nennt den Stand des Treffers (`[lieferant · Stand 02.11.2026]`); ein Treffer, der nur aus überholten Aussagen besteht, heißt `überholt, gilt nicht mehr`. Die Felder `date` und `ueberholt` liefert das Tool ab Branch `feat/wiki-recency` (company-interface); mit einem älteren Tool bleibt die Zeile wie bisher.
