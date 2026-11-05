@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 (05.11.2026)
+
+- Neu: `/projekte` und die Projekt-Akte des Tools. `cbtool.py projekte [--ausnahmen | --neu-seit YYYY-MM-DD | --ref <nummer>]` (Kennung, Name, Stand, wer dran ist) und `cbtool.py projekt <P-n|Name|SKU> [--schritte-alle]` (Ziel, Stand, Schritte, Pflichtpunkte, Bezüge, `Stand:`-Zeile).
+- Schreiben, ohne `--ausfuehren` nur Vorschau: `projekt-bezug` (Tür `projekt_bezug`, zuordnen und mit `--loesen` lösen), `projekt-schritte` (anlegen, verfeinern, Pflichtpunkte nachziehen), `schritt-aktion` (beginnen, erledigen, entfaellt, wieder_offen, problem, loesen) und `schritt-uebernehmen` (Aufgabe für eine Person; alle Tür `projekt_schritte`). `--help` zeigt alle Felder.
+- Beleg (10 bis 500 Zeichen) ist Pflicht. Der Idempotenz-Schlüssel kommt aus dem Inhalt, `--schluessel` setzt einen eigenen. Das Tool entscheidet über die Rechte; seine Ablehnung geht wörtlich hinaus (403 für Bots, die eine Tür nicht haben).
+- Skill `skills/projekte/SKILL.md`, Prüfskript `tests/pruefe-projekte.py`.
+- Braucht das Tool mit der Projekt-Akte (company-interface, Release #669). Davor sagt der Befehl „gibt es im Tool noch nicht“.
+
 ## 0.13.0 (04.11.2026)
 
 - Neu: `/kontakt` und `cbtool.py kontakt <adresse|domain|firma> [--json]`. Kontaktgeschichte vor jeder Mail: das Tool ordnet die Adresse, Domain oder Firma einem Lieferanten oder Partner zu (über Kontakt-Mail, Domain, Firmenname) und nennt offene Bestellungen und Sendungen, die letzten Journal-Zeilen, die Wiki-Seite und die fertige Gmail-Suche `mail_suche`. Das Tool liest keine Mails: die Suche führt jeder mit seiner eigenen Gmail-Verbindung aus.

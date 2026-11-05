@@ -72,6 +72,21 @@ Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <ar
           --ref CB-123. Aufgaben-Ereignisse schreibt das Tool selbst, nie von Hand. Zusage: --faellig Pflicht. Ein
           wiederholter Befehl schreibt nicht doppelt (Schlüssel aus dem Inhalt und dem Tag).
 
+Projekte: cbtool.py projekte [--ausnahmen | --neu-seit YYYY-MM-DD | --ref CB-345|PO-032|IN-…|SKU]
+          cbtool.py projekt P-6 [--schritte-alle]          (P-n, Name, Namensanfang oder SKU eines Projektprodukts)
+          cbtool.py projekt-bezug P-6 (--aufgabe CB-218 | --bestellung PO-032 | --einsendung IN-… | --produkt <sku>)
+                          --beleg <satz> [--loesen] [--schluessel <id>] [--ausfuehren]
+          cbtool.py projekt-schritte P-6 (--art <art> --titel <text> [--sku <sku>] [--schritt-schluessel <s>]
+                          [--hinweis <text>] [--braucht S-1,<s>] | --liste <datei|-> | --pflichtpunkte)
+                          --beleg <satz> [--schluessel <id>] [--ausfuehren]
+          cbtool.py schritt-aktion S-412 --aktion beginnen|erledigen|entfaellt|wieder_offen|problem|loesen --beleg <satz>
+                          [--am <zeitpunkt>] [--grund <satz>] [--fundort <link>] [--freigabe-von <name>]
+                          [--freigabe-beleg <id>] [--schluessel <id>] [--ausfuehren]
+          cbtool.py schritt-uebernehmen S-412 --fuer <name> [--frist YYYY-MM-DD] [--titel <text>] --beleg <satz>
+                          [--schluessel <id>] [--ausfuehren]
+          Lesen zeigt die Akte des Tools. Schreiben: ohne --ausfuehren nur Vorschau, mit --ausfuehren eintragen, nur nach
+          Ja der Person. Das Tool entscheidet, wer was darf; seine Ablehnung steht wörtlich in der Ausgabe. Hilfe: --help
+
 Kontakt:  cbtool.py kontakt <adresse|domain|firma> [--json]
           Kontaktgeschichte vor jeder Mail: Zuordnung zu Lieferant/Partner, offene Bestellungen und Sendungen, letzte
           Journal-Zeilen, Wiki-Seite und die fertige Gmail-Suche (mail_suche). Das Tool liest keine Mails: die Suche
@@ -739,6 +754,7 @@ STAND_TEXT = {
     "shopsBisTag": ("Shops bis", _datum_text),
     "letzterLauf": ("letzter Planungslauf", _zeitpunkt),
     "lager": ("Lager", str),
+    "neuSeit": ("neu seit", _datum_text),
 }
 
 
@@ -2082,6 +2098,480 @@ KASSE_BEFEHLE = {
 }
 
 
+# ---------------------------------------------------------------- Projekte: Projekt-Akte (Tool-Release 05.11.2026)
+# Das Tool rechnet und prüft (docs/architecture/projekt-akte-kopf.md, projekt-akte-schritte.md). Das Skript prüft nur, was
+# es zum Senden braucht; jede Ablehnung des Tools geht wörtlich hinaus, ohne Zusatz. Kein Rechte-Nachbau hier (konto-rechte.ts).
+
+PROJEKTE_FEHLT = "Die Projekt-Akte gibt es im Tool noch nicht (Route /api/brain-read/projekte fehlt)."
+SCHRITT_AKTIONEN = ("beginnen", "erledigen", "entfaellt", "wieder_offen", "problem", "loesen")
+BEZUG_ARTEN = ("aufgabe", "bestellung", "einsendung", "produkt")
+SCHLUESSEL_FORM = "--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich."
+ZUSTAND_TEXT = {"startbar": "startbar", "blockiert": "blockiert", "laeuft": "läuft", "wartet": "wartet", "erledigt": "erledigt", "entfaellt": "trifft nicht zu"}
+PROJEKT_HILFE = """Projekt-Akte schreiben (Tool-Türen projekt_bezug und projekt_schritte, 05.11.2026).
+
+projekt-bezug <projekt> (--aufgabe CB-218 | --bestellung PO-032 | --einsendung IN-2026-0039 | --produkt <sku>)
+              --beleg <satz> [--loesen] [--schluessel <id>] [--ausfuehren]
+  Ordnet genau ein Objekt dem Projekt zu; --loesen nimmt die Zuordnung zurück. Produkte nur Personen.
+projekt-schritte <projekt> --beleg <satz> [--schluessel <id>] [--ausfuehren] und genau eines von:
+  --art <art> --titel <text> [--sku <sku>] [--schritt-schluessel <s>] [--hinweis <text>] [--braucht S-1,<s>]
+                 ein Schritt anlegen oder verfeinern
+  --liste <datei|-> JSON-Liste, höchstens 60: [{"art": "...", "titel": "...", "sku": "...", "schluessel": "...",
+                 "hinweis": "...", "braucht_vorher": ["S-1"]}]; neue Art: "art": {"neu": {"schluessel": "...", "name": "...",
+                 "zustaendigkeit": "...", "dokument": false}}
+  --pflichtpunkte  nur fehlende Pflichtpunkte nachziehen (das Tool ergänzt sie bei jedem Anlegen selbst)
+schritt-aktion S-412 --aktion <aktion> --beleg <satz> [--schluessel <id>] [--ausfuehren]
+  beginnen        [--am]
+  erledigen       [--am] [--fundort] [--freigabe-von --freigabe-beleg]    --beleg ist der Beleg des Schritts
+  entfaellt       --grund [--am] [--freigabe-von --freigabe-beleg]        „trifft nicht zu“
+  wieder_offen    --grund
+  problem         --grund
+  loesen
+  --am: Zeitpunkt mit Zone, z. B. 2026-11-04T15:30:00+01:00, höchstens 14 Tage zurück. --freigabe-beleg: Mail-ID, J-n oder
+  Slack-Link. Bots erledigen mit Freigabe einer zuständigen Person.
+schritt-uebernehmen S-412 --fuer <name> [--frist YYYY-MM-DD] [--titel <text>] --beleg <satz> [--schluessel <id>] [--ausfuehren]
+  Legt die Aufgabe für die Person an; der Schritt folgt ab dann der Aufgabe.
+
+--beleg: 10 bis 500 Zeichen, woher die Information kommt, mit Link, wo es einen gibt. Ohne --ausfuehren nur Vorschau, nichts
+geschrieben; mit --ausfuehren eintragen, nur nach Ja der Person. Der Idempotenz-Schlüssel kommt aus dem Inhalt: derselbe
+Befehl bucht nicht doppelt, die Ausgabe sagt dann „Schon eingetragen“. Eine bewusst neue Buchung mit gleichem Inhalt (etwa
+nach wieder_offen): neuer Beleg oder eigener --schluessel. Die Nummern einer Vorschau sind nicht endgültig."""
+
+
+def _projekt_call(pfad: str, body=None, method: str = "GET") -> dict:
+    try:
+        return call(LESEN + pfad, body, method=method, timeout=TIMEOUT_LESEN, plain_errors=True)
+    except SystemExit as e:
+        if str(e.code) == "Tool antwortet 404.":  # Route fehlt; „Projekt … gibt es nicht“ kommt mit Text
+            raise SystemExit(PROJEKTE_FEHLT)
+        raise
+
+
+def _projekt_ref(args: list[str], was: str) -> str:
+    """P-n, Name, Namensanfang oder SKU; Namen dürfen Leerzeichen und Klammern tragen. Als Pfadteil kodiert."""
+    if len(args) != 1 or args[0].startswith("--"):
+        _falsch(f"{was} braucht genau ein Projekt, z. B. P-6." + (f" Unbekannt: {' '.join(args)}" if args else ""))
+    ref = args[0].strip()
+    if not ref.strip("."):  # „.“ und „..“ würde der Weg zum Tool als Pfad auflösen
+        _falsch(f"„{args[0]}“ ist kein Projekt (P-n, Name oder SKU).")
+    return urllib.parse.quote(ref, safe="")
+
+
+def _schritt_nr(args: list[str], was: str) -> str:
+    if len(args) != 1:
+        _falsch(f"{was} braucht genau einen Schritt, z. B. S-412." + (f" Unbekannt: {' '.join(args)}" if args else ""))
+    m = re.match(r"^(?:[sS]-?)?(\d{1,9})$", args[0].strip())
+    if not m:
+        _falsch(f"„{args[0]}“ ist kein Schritt (erwartet S-412).")
+    return f"S-{m.group(1)}"
+
+
+def _schluessel(wert: str | None) -> str | None:
+    if wert is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", wert):
+        _falsch(SCHLUESSEL_FORM)
+    return wert
+
+
+def _dran_text(w: dict | None) -> str:
+    """„Maxi, Mats seit 21.08.“, „wartet auf Lüschow“ steht dahinter, wenn die Arbeit woanders liegt."""
+    w = w or {}
+    text = ", ".join(w.get("personen") or []) or "niemand"
+    if w.get("wartetAuf"):
+        text += f", wartet auf {w['wartetAuf']}"
+    if w.get("seit"):
+        text += f" seit {'etwa ' if w.get('seitUngenau') else ''}{_datum_text(w['seit'])}"
+    return text
+
+
+def _naechster_text(n: dict | None) -> str | None:
+    if not n:
+        return None
+    return f"{n.get('text')} ({n.get('quelle')})" + (f", fällig {_datum_text(n['faellig'])}" if n.get("faellig") else "")
+
+
+def _stand_text(st: dict | None) -> str:
+    if not st:
+        return "kein Stand"
+    return f"{_datum_text(st.get('am'))}: {st.get('text')} ({st.get('quelle')})"
+
+
+def _offen_text(p: dict) -> str:
+    return "offen" if p.get("offen") else "abgeschlossen"
+
+
+def _projekt_zeile(x: dict) -> str:
+    """P-6 · Name · offen · Stand 05.11.: Text (J-410) · dran: Maxi, Mats · nächster Schritt: Text (S-148) · hängt."""
+    p, z = x.get("projekt") or {}, x.get("zeile") or {}
+    teile = [p.get("nr") or "?", p.get("name") or "?", _offen_text(p), "Stand " + _stand_text(z.get("stand")), "dran: " + _dran_text(z.get("werDran"))]
+    if z.get("naechsterSchritt"):
+        teile.append("nächster Schritt: " + _naechster_text(z["naechsterSchritt"]))
+    if z.get("blocker"):
+        teile.append(f"Blocker: {len(z['blocker'])}")
+    if z.get("befunde"):
+        teile.append(f"Befunde: {len(z['befunde'])}")
+    if z.get("haengt"):
+        teile.append("hängt")
+    return " · ".join(teile)
+
+
+def _befund_zeile(b: dict) -> str:
+    teile = [b.get("art") or "?", b.get("ref") or "?", f"seit {_datum_text(b.get('seit'))}"]
+    if b.get("projekte"):
+        teile.append(", ".join(b["projekte"]))
+    if b.get("besitzer"):
+        teile.append(b["besitzer"])
+    if b.get("naechsterSchritt"):
+        teile.append(f"nächster Schritt: {b['naechsterSchritt']}")
+    if b.get("link"):
+        teile.append(b["link"])
+    return " · ".join(teile)
+
+
+def cmd_projekte(args: list[str]) -> None:
+    """Alle Projekte des Kontos (GET /projekte?alle=1); --ausnahmen, --neu-seit und --ref sind die anderen Lesarten des Tools."""
+    ausnahmen = _schalter(args, "--ausnahmen")
+    neu_seit = _tag_param(_wert(args, "--neu-seit"), "--neu-seit")
+    ref = _wert(args, "--ref")
+    _rest_leer(args)
+    if sum((ausnahmen, neu_seit is not None, ref is not None)) > 1:
+        _falsch("Höchstens eines von --ausnahmen, --neu-seit, --ref.")
+    if ref is not None:
+        res = _projekt_call("/projekte?" + urllib.parse.urlencode({"ref": ref.strip()}))
+        treffer = res.get("treffer") or []
+        if not treffer:
+            print(f"{ref.strip()} gehört zu keinem Projekt.")
+        else:
+            print(f"{ref.strip()} gehört zu ({len(treffer)}):")
+            for t in treffer:
+                print(f"  {t.get('projekt')} · {t.get('name')} · {'offen' if t.get('offen') else 'abgeschlossen'} · {t.get('art')} {t.get('ref')} · über {t.get('herkunft')}")
+    elif ausnahmen or neu_seit is not None:
+        res = _projekt_call("/projekte" + (f"?neu_seit={neu_seit}" if neu_seit else ""))
+        befunde = res.get("befunde") or []
+        titel = f"Neue Befunde seit {_datum_text(neu_seit, voll=True)}" if neu_seit else "Befunde"
+        print(f"{titel} ({len(befunde)}):" if befunde else f"{titel}: keine.")
+        for b in befunde:
+            print("  " + _befund_zeile(b))
+        z = res.get("zaehler") or {}
+        print(f"Projekte: {_n(z.get('projekte'))}, offen {_n(z.get('offen'))}, hängen {_n(z.get('haengen'))}. Aufgaben ohne Projekt {_n(z.get('aufgabenOhneProjekt'))}, Journal ohne Bezug {_n(z.get('journalOhneBezug'))}.")
+    else:
+        res = _projekt_call("/projekte?alle=1")
+        liste = res.get("projekte") or []
+        print(f"Projekte ({len(liste)}):" if liste else "Keine Projekte sichtbar.")
+        for x in liste:
+            print("  " + _projekt_zeile(x))
+    _stand(res)
+
+
+def _schritt_block(s: dict) -> None:
+    zaehler = ", ".join(f"{ZUSTAND_TEXT.get(k, k)} {_n(v)}" for k, v in (s.get("zaehler") or {}).items() if v)
+    print(f"Schritte: {s.get('fortschritt')}" + (f" ({zaehler})" if zaehler else ""))
+    if s.get("alle") is not None:
+        for x in s["alle"]:
+            teile = [x.get("nr") or "?", ZUSTAND_TEXT.get(x.get("zustand"), x.get("zustand") or "?"), x.get("titel") or "?"]
+            if x.get("verantwortlich"):
+                teile.append(", ".join(x["verantwortlich"]))
+            if x.get("aufgabe"):
+                teile.append(x["aufgabe"])
+            if x.get("blockiertDurch"):
+                teile.append("braucht " + ", ".join(str(b) for b in x["blockiertDurch"]))
+            if x.get("pflicht"):
+                teile.append("Pflicht")
+            if x.get("dokument"):
+                teile.append(f"Dokument {x['dokument'].get('stand')}")
+            if x.get("schluessel"):
+                teile.append(f"[{x['schluessel']}]")
+            print("  " + " · ".join(teile))
+    else:
+        for x in s.get("dran") or []:
+            teile = [x.get("nr") or "?", ZUSTAND_TEXT.get(x.get("zustand"), x.get("zustand") or "?"), x.get("titel") or "?"]
+            if x.get("personen"):
+                teile.append(", ".join(x["personen"]))
+            if x.get("aufgabe"):
+                teile.append(x["aufgabe"])
+            if x.get("frist"):
+                teile.append(f"Frist {_datum_text(x['frist'])}")
+            if x.get("wartet_auf"):
+                teile.append(f"wartet auf {x['wartet_auf']}")
+            if x.get("seit"):
+                teile.append(f"seit {_datum_text(x['seit'])}")
+            if x.get("pflicht"):
+                teile.append("Pflicht")
+            print("  " + " · ".join(teile))
+        if s.get("weitere"):
+            print(f"  und {s['weitere']} weitere; alle mit --schritte-alle")
+    if s.get("fehlende_pflichtpunkte"):
+        print("Fehlende Pflichtpunkte:")
+        for p in s["fehlende_pflichtpunkte"]:
+            print(f"  {p.get('schluessel')} · {p.get('name')} · Quelle: {p.get('quelle')}")
+    if s.get("dokumente_fehlen"):
+        print(f"Dokumente fehlen: {_n(s['dokumente_fehlen'])}")
+
+
+def cmd_projekt(args: list[str]) -> None:
+    alle = _schalter(args, "--schritte-alle")
+    ref = _projekt_ref(args, "projekt")
+    res = _projekt_call(f"/projekte/{ref}" + ("?schritte=alle" if alle else ""))
+    p, z = res.get("projekt") or {}, res.get("zeile") or {}
+    print(f"{p.get('nr')} · {p.get('name')} · {_offen_text(p)}")
+    _felder((
+        ("Ziel", p.get("ziel")),
+        ("Besitzer", p.get("besitzer")),
+        ("Ziel bis", _datum_text(p.get("zielBis"), voll=True)),
+        ("Ergebnis", p.get("ergebnis")),
+        ("Letzter Stand", _stand_text(z.get("stand"))),
+        ("Nächster Schritt", _naechster_text(z.get("naechsterSchritt"))),
+        ("Wer dran", _dran_text(z.get("werDran"))),
+        ("Hängt", "ja" if z.get("haengt") else None),
+    ))
+    for titel, liste, zeile in (
+        ("Blocker", z.get("blocker"), lambda b: f"{b.get('ref')} · {b.get('text')}"),
+        ("Befunde", z.get("befunde"), _befund_zeile),
+        ("Hinweise", z.get("hinweise"), str),
+    ):
+        if liste:
+            print(f"{titel}:")
+            for x in liste:
+                print("  " + zeile(x))
+    if res.get("schritte"):
+        _schritt_block(res["schritte"])
+    else:
+        print("Schritte: keine Angabe")
+    weitere = res.get("weitere") or {}
+    print("Bezüge:")
+    bezuege = (
+        ("Aufgaben", res.get("aufgaben"), str, "aufgaben"),
+        ("Produkte", res.get("produkte"), lambda x: f"{x.get('sku') or 'ohne SKU'} · {x.get('name') or '?'}", "produkte"),
+        ("Bestellungen", res.get("bestellungen"), lambda x: " · ".join(str(t) for t in (x.get("po"), x.get("status"), x.get("produkt"), f"Termin {_datum_text(x['termin'])}" if x.get("termin") else "ohne Termin", x.get("naechsterSchritt")) if t), "bestellungen"),
+        ("Einsendungen", res.get("einsendungen"), lambda x: " · ".join(str(t) for t in (x.get("nr"), x.get("status"), f"ETA {_datum_text(x['eta'])}" if x.get("eta") else "ohne ETA", x.get("warnung")) if t), "einsendungen"),
+        ("Journal", res.get("journal"), str, "journal"),
+    )
+    for titel, liste, zeile, feld in bezuege:
+        mehr = f" (und {weitere[feld]} weitere)" if weitere.get(feld) else ""
+        if liste:
+            print(f"  {titel}{mehr}:")
+            for x in liste:
+                print("    " + zeile(x))
+        else:
+            print(f"  {titel}: keine")
+    v = res.get("verweise") or {}
+    voll = lambda w: tool_url() + w if w and w.startswith("/") else w
+    _felder((("Journal", voll(v.get("journal"))), ("Wiki", voll(v.get("wiki"))), ("Drive", v.get("drive")), ("Link", f"{tool_url()}/projekte/{p.get('nr')}")))
+    _stand(res)
+
+
+def _buchen_kopf(a: dict, was: str, neu: str) -> None:
+    """Erste Zeile jeder Buchung, in der Reihenfolge wiederholt › unverändert › Vorschau › gebucht."""
+    if a.get("wiederholt"):
+        am = _datum_text((a.get("gebuchtAm") or a.get("gebucht_am") or "")[:10], voll=True)
+        print(f"Schon eingetragen (gleicher Befehl{', ' + am if am else ''}): {was}. Nichts neu geschrieben.")
+    elif a.get("unveraendert"):
+        print(f"Schon so, nichts zu ändern: {was}")
+    elif a.get("vorschau"):
+        print(f"Vorschau, nichts geschrieben: {was}")
+    else:
+        print(f"{neu}: {was}")
+
+
+def _buchen_fuss(a: dict, beleg: str) -> None:
+    print(f"Beleg: {beleg}")
+    if a.get("journal"):
+        print(f"Journal: {a['journal']}")
+    if a.get("vorschau") and not a.get("wiederholt") and not a.get("unveraendert"):
+        print("Zum Eintragen denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person.")
+    if a.get("link"):
+        print(f"Link: {a['link']}")
+
+
+def _hilfe(args: list[str]) -> bool:
+    if "--help" in args or "-h" in args:
+        print(PROJEKT_HILFE)
+        return True
+    return False
+
+
+def cmd_projekt_bezug(args: list[str]) -> None:
+    """Zuordnen (POST) oder lösen (DELETE) /projekte/<ref>/bezuege. Standard: Vorschau; --ausfuehren schreibt."""
+    if _hilfe(args):
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    loesen = _schalter(args, "--loesen")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _schluessel(_wert(args, "--schluessel"))
+    ziele = {art: _wert(args, "--" + art) for art in BEZUG_ARTEN}
+    ref = _projekt_ref(args, "projekt-bezug")
+    gesetzt = [(art, z.strip()) for art, z in ziele.items() if z is not None]
+    if len(gesetzt) != 1:
+        _falsch("Genau eines von --aufgabe, --bestellung, --einsendung, --produkt angeben.")
+    art, ziel = gesetzt[0]
+    beleg = _beleg(beleg_roh)
+    richtung = "loesen" if loesen else "setzen"
+    body = {art: ziel, "beleg": beleg, "vorschau": not ausfuehren}
+    if schluessel or ausfuehren:
+        body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "projekt_bezug", "richtung": richtung, "projekt": urllib.parse.unquote(ref), art: ziel, "beleg": beleg})
+    a = _projekt_call(f"/projekte/{ref}/bezuege", body, method="DELETE" if loesen else "POST").get("aenderung") or {}
+    was = f"{a.get('art')} {a.get('ziel')} {'aus' if loesen else 'zu'} {a.get('projekt')}"
+    _buchen_kopf(a, was, "Gelöst" if loesen else "Zugeordnet")
+    _buchen_fuss(a, beleg)
+
+
+def _schritte_aus_liste(pfad: str) -> list:
+    try:
+        roh = sys.stdin.read() if pfad == "-" else open(pfad, encoding="utf-8").read()
+        liste = json.loads(roh)
+    except OSError as e:
+        _falsch(f"--liste: Datei nicht lesbar ({e.strerror}).")
+    except ValueError as e:
+        _falsch(f"--liste: kein gültiges JSON ({e}).")
+    if not isinstance(liste, list):
+        _falsch("--liste erwartet eine JSON-Liste von Schritten.")
+    return liste
+
+
+def _eintrag_text(x) -> str:
+    """Einträge der Antwort sind je nach Liste S-n oder Objekt; Nummern und Schlüssel wörtlich."""
+    if not isinstance(x, dict):
+        return str(x)
+    teile = [str(x[k]) for k in ("nr", "schluessel", "art") if x.get(k)]
+    return " · ".join(t for i, t in enumerate(teile) if t not in teile[:i]) or json.dumps(x, ensure_ascii=False)
+
+
+def cmd_projekt_schritte(args: list[str]) -> None:
+    """Schritte anlegen und verfeinern (POST /projekte/<ref>/schritte). Standard: Vorschau; --ausfuehren schreibt."""
+    if _hilfe(args):
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    nur_pflicht = _schalter(args, "--pflichtpunkte")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _schluessel(_wert(args, "--schluessel"))
+    liste_pfad = _wert(args, "--liste")
+    art = _wert(args, "--art")
+    titel = _wert(args, "--titel")
+    sku = _wert(args, "--sku")
+    eigener = _wert(args, "--schritt-schluessel")
+    hinweis = _wert(args, "--hinweis")
+    braucht = _wert(args, "--braucht")
+    ref = _projekt_ref(args, "projekt-schritte")
+    einzeln = any(x is not None for x in (art, titel, sku, eigener, hinweis, braucht))
+    if sum((nur_pflicht, liste_pfad is not None, einzeln)) != 1:
+        _falsch("Genau eines: --art mit --titel (ein Schritt), --liste oder --pflichtpunkte.")
+    beleg = _beleg(beleg_roh)
+    if nur_pflicht:
+        schritte = []
+    elif liste_pfad is not None:
+        schritte = _schritte_aus_liste(liste_pfad)
+    else:
+        if art is None or titel is None:
+            _falsch("Ein Schritt braucht --art und --titel (ein prüfbares Ergebnis).")
+        s = {"art": art, "titel": titel}
+        for feld, wert in (("sku", sku), ("schluessel", eigener), ("hinweis", hinweis)):
+            if wert is not None:
+                s[feld] = wert
+        if braucht is not None:
+            s["braucht_vorher"] = [b.strip() for b in braucht.split(",") if b.strip()]
+        schritte = [s]
+    body = {"schritte": schritte, "beleg": beleg, "vorschau": not ausfuehren}
+    if schluessel or ausfuehren:
+        # Mit dem Berliner Tag: das Anlegen ist im Tool selbst idempotent, und ein Lauf an einem späteren Tag soll neue Pflichtpunkte finden.
+        body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "projekt_schritte", "was": "anlegen", "tag": _heute_berlin(), "projekt": urllib.parse.unquote(ref), "schritte": schritte, "beleg": beleg})
+    a = _projekt_call(f"/projekte/{ref}/schritte", body, method="POST")
+    angelegt, pflicht, geaendert, gleich, neu = (a.get(k) or [] for k in ("angelegt", "pflichtpunkte_ergaenzt", "geaendert", "unveraendert", "neue_arten"))
+    was = f"{a.get('projekt')}: {len(angelegt)} neu, {len(geaendert)} geändert, {len(gleich)} unverändert"
+    # Die Tür meldet hier kein Feld „unveraendert“ als Wahrheitswert: nichts Neues, nichts Geändertes heißt schon so.
+    a = {**a, "unveraendert": not (angelegt or geaendert or neu)}
+    _buchen_kopf(a, was, "Eingetragen")
+    vorschau = a.get("vorschau") and not a.get("wiederholt")
+    for x in angelegt:  # Vorschau: Nummern wurden zurückgerollt und gelten nicht
+        print("  + " + _eintrag_text({k: v for k, v in x.items() if k != "nr"} if vorschau and isinstance(x, dict) else x))
+    for x in geaendert:
+        print("  ~ " + _eintrag_text(x))
+    if pflicht:
+        print("Pflichtpunkte ergänzt:")
+        for x in pflicht:
+            nr = "" if vorschau or not x.get("nr") else f"{x['nr']} · "
+            print(f"  {nr}{x.get('art')} · Quelle: {x.get('quelle') or '–'}")
+    if neu:
+        print("Neue Arten: " + ", ".join(_eintrag_text(x) for x in neu))
+    _buchen_fuss(a, beleg)
+
+
+def cmd_schritt_aktion(args: list[str]) -> None:
+    """Aktion an einem Schritt (POST /schritte/<S-n>). Standard: Vorschau; --ausfuehren schreibt."""
+    if _hilfe(args):
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    aktion_roh = _wert(args, "--aktion")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _schluessel(_wert(args, "--schluessel"))
+    felder = {feld: _wert(args, opt) for opt, feld in (("--am", "am"), ("--grund", "grund"), ("--fundort", "fundort"), ("--freigabe-von", "freigabe_von"), ("--freigabe-beleg", "freigabe_beleg"))}
+    nr = _schritt_nr(args, "schritt-aktion")
+    if aktion_roh is None:
+        _falsch("schritt-aktion braucht --aktion: " + ", ".join(SCHRITT_AKTIONEN) + ".")
+    aktion = _wahl(aktion_roh.strip().replace("-", "_").replace("ä", "ae"), "--aktion", SCHRITT_AKTIONEN)
+    beleg = _beleg(beleg_roh)
+    inhalt = {"aktion": aktion, "beleg": beleg}
+    inhalt.update({k: v for k, v in felder.items() if v is not None})
+    body = {**inhalt, "vorschau": not ausfuehren}
+    if schluessel or ausfuehren:
+        body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "projekt_schritte", "was": "aktion", "schritt": nr, **inhalt})
+    a = _projekt_call(f"/schritte/{nr}", body, method="POST")
+    was = f"{a.get('nr')} ({a.get('projekt')}) · {a.get('aktion')}"
+    _buchen_kopf(a, was, "Gebucht")
+    vorher = ZUSTAND_TEXT.get(a.get("vorher"), a.get("vorher"))
+    if a.get("zustand"):
+        print(f"Zustand: {vorher} › {ZUSTAND_TEXT.get(a['zustand'], a['zustand'])}")
+    elif vorher:
+        print(f"Zustand jetzt: {vorher}")
+    if a.get("gemacht_von"):
+        print(f"Gemacht von: {a['gemacht_von']}")
+    if a.get("dokument"):
+        print(f"Dokument: {a['dokument']}")
+    _buchen_fuss(a, beleg)
+
+
+def cmd_schritt_uebernehmen(args: list[str]) -> None:
+    """Schritt übernehmen (POST /aufgaben mit schritt): Aufgabe für die Person. Standard: Vorschau; --ausfuehren schreibt."""
+    if _hilfe(args):
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    fuer = _wert(args, "--fuer")
+    frist = _tag_param(_wert(args, "--frist"), "--frist")
+    titel = _wert(args, "--titel")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _schluessel(_wert(args, "--schluessel"))
+    nr = _schritt_nr(args, "schritt-uebernehmen")
+    if fuer is None or not fuer.strip():
+        _falsch("schritt-uebernehmen braucht --fuer <name>: die Person, die den Schritt übernimmt.")
+    beleg = _beleg(beleg_roh)
+    inhalt = {"schritt": nr, "fuer": fuer.strip(), "beleg": beleg}
+    for feld, wert in (("frist", frist), ("titel", titel)):
+        if wert is not None:
+            inhalt[feld] = wert
+    body = {**inhalt, "vorschau": not ausfuehren}
+    if schluessel or ausfuehren:
+        body["idempotenz_schluessel"] = schluessel or _idempotenz({"tuer": "projekt_schritte", "was": "uebernehmen", **inhalt})
+    a = _projekt_call("/aufgaben", body, method="POST")
+    s = a.get("schritt") or {}
+    vorschau = a.get("vorschau") and not a.get("wiederholt")
+    was = f"{s.get('nr')} an {fuer.strip()}" + ("" if vorschau or not a.get("aufgabe") else f" als {a['aufgabe']}")  # Vorschau: Nummer zurückgerollt
+    if frist:
+        was += f", Frist {_datum_text(frist, voll=True)}"
+    _buchen_kopf(a, was, "Übernommen")
+    if a.get("titel"):
+        print(f"Titel: {a['titel']}")
+    if s.get("zustand"):
+        print(f"Zustand{' jetzt' if vorschau else ''}: {ZUSTAND_TEXT.get(s['zustand'], s['zustand'])}")
+    _buchen_fuss(a, beleg)
+
+
+PROJEKT_BEFEHLE = {
+    "projekte": cmd_projekte,
+    "projekt": cmd_projekt,
+    "projekt-bezug": cmd_projekt_bezug,
+    "projekt-schritte": cmd_projekt_schritte,
+    "schritt-aktion": cmd_schritt_aktion,
+    "schritt-uebernehmen": cmd_schritt_uebernehmen,
+}
+
+
 def main(argv: list[str]) -> None:
     global HILFE
     if len(argv) < 2:
@@ -2122,6 +2612,9 @@ def main(argv: list[str]) -> None:
     elif cmd in JOURNAL_BEFEHLE:
         HILFE = "Journal:"
         JOURNAL_BEFEHLE[cmd](args)
+    elif cmd in PROJEKT_BEFEHLE:
+        HILFE = "Projekte:"
+        PROJEKT_BEFEHLE[cmd](args)
     elif cmd == "kontakt":
         HILFE = "Kontakt:"
         cmd_kontakt(args)
