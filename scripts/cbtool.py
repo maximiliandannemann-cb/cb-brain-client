@@ -36,6 +36,7 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>] [--abweichung]
           cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
           cbtool.py bestand [--suche <sku|name>] [--limit <n>]
+          cbtool.py bestand-herkunft <sku>               (alle Bewegungen je Lager mit Saldo, SKU wörtlich)
           cbtool.py bestellplanung [--status faellig|ueberfaellig|alle|vorschlag|angepasst|bestaetigt]
                                    [--suche <text>] [--marktplatz DE|US|alle] [--limit <n>]
           cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
@@ -1549,6 +1550,52 @@ def cmd_bestand(args: list[str]) -> None:
     _stand(res)
 
 
+# ---- Herkunft des Bestands
+
+HERKUNFT_FEHLT = "Die Herkunft des Bestands gibt es im Tool noch nicht (Route /api/brain-read/bestand/<sku>/herkunft fehlt)."
+
+
+def _bewegung_zeile(b: dict) -> str:
+    menge = b.get("menge") or 0
+    beleg = [b.get("bestellung"), b.get("einsendung"), b.get("amazonId")]
+    teile = [_datum_text(b.get("datum"), voll=True) or "?", ("+" if menge > 0 else "") + _n(menge), b.get("art") or ""]
+    teile += [x for x in beleg if x]
+    if b.get("storno"):
+        teile.append("Storno")
+    if b.get("saldo") is not None:
+        teile.append(f"Saldo {_n(b.get('saldo'))}")
+    if b.get("grund"):
+        teile.append(f"zählt nicht: {b['grund']}")
+    return " · ".join(t for t in teile if t)
+
+
+def cmd_bestand_herkunft(args: list[str]) -> None:
+    if len(args) != 1 or not args[0].strip() or args[0].startswith("-"):
+        _falsch("bestand-herkunft braucht genau eine SKU, wörtlich wie in der Ausgabe von bestand.")
+    try:
+        res = _ware_get("/bestand/" + urllib.parse.quote(args[0].strip(), safe="") + "/herkunft")
+    except SystemExit as e:
+        # Die Route antwortet bei unbekannter SKU mit Text; ohne Text fehlt die Route selbst (älteres Tool).
+        if e.code == "Tool antwortet 404.":
+            raise SystemExit(HERKUNFT_FEHLT)
+        raise
+    print(" · ".join(t for t in (res.get("sku"), res.get("name")) if t))
+    abgleich = res.get("abgleich") or {}
+    print(f"Abgleich mit dem Lagerbestand: {abgleich.get('text') or 'unbekannt'}")
+    for l in res.get("lager") or []:
+        if l.get("lagerbestand") is None:
+            vergleich = "kein Lagerbestand zum Vergleichen"
+        else:
+            ergebnis = "stimmt" if l.get("stimmt") else "STIMMT NICHT"
+            vergleich = f"Bewegungen {_n(l.get('summeBewegungen'))}, Lagerbestand {_n(l.get('lagerbestand'))}, {ergebnis}"
+        print(f"{l.get('standort')}: {vergleich}")
+        for b in l.get("bewegungen") or []:
+            print("  " + _bewegung_zeile(b))
+    if res.get("link"):
+        print(f"Link: {res['link']}")
+    _stand(res)
+
+
 # ---- Bestellplanung
 
 PLAN_STATUS = ("faellig", "ueberfaellig", "alle", "vorschlag", "angepasst", "bestaetigt")
@@ -1698,6 +1745,7 @@ WARE = {
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,
+    "bestand-herkunft": cmd_bestand_herkunft,
     "bestellplanung": cmd_bestellplanung,
     "absatz": cmd_absatz,
 }

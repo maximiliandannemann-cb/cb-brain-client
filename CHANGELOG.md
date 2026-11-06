@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 (06.11.2026)
+
+- Neu: `bestand-herkunft <sku>`: alle Bewegungen der SKU je Lager mit laufendem Saldo, ohne Zeitgrenze, mit PO-, Einsendungs- und Amazon-Nummer wörtlich. Sagt ausdrücklich, ob die Rechnung je Lager gleich dem Tool-Bestand ist (keine Zählung), und je Zeile, warum sie nicht zählt (#677).
+- Prüfskript `tests/pruefe-bestand-herkunft.py`.
+- Braucht das Tool mit `/api/brain-read/bestand/<sku>/herkunft` (company-interface, Branch `feat/lesezugang-reichweite-herkunft`). Mit einem älteren Tool sagt der Befehl „gibt es im Tool noch nicht“.
+- Die Reichweite in `bestand` kommt noch nicht: Sie hängt am Tool (#327).
+
 ## 0.15.0 (06.11.2026)
 
 - `sendung <IN-Nummer oder FBA-ID>` zeigt je Position versandt, eingebucht, offen und den Zustand („noch unterwegs“, „zugestellt“, „wird gerade eingebucht“, „abgeschlossen“) samt Stand der Amazon-Daten. Fehlende Mengen stehen als „unbekannt“, nie als 0. `offen` ist hier Amazons Rest (versandt minus eingebucht). Die Zulauf-Schätzung des Tools heißt im JSON `sendinOpenUnits` und erscheint in dieser Ausgabe nicht.
