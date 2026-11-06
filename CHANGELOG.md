@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.19.0 (06.11.2026)
+
+- Neu: `einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<n>[@JJJJ-MM-TT] --beleg "<satz>"`: startet einen Einsendungs-Auftrag im selben Ablauf wie der Dialog des Tools. Ohne `--ausfuehren` nur Vorschau (kein Aufruf bei Amazon, nichts geschrieben). Der Schlüssel kommt aus Inhalt und Tag, `--schluessel` setzt einen eigenen. Transport und kostenpflichtige Lager bestätigt weiter eine Person im Tool, die Mail bleibt ein Entwurf.
+- Die Tür ist im Tool noch für alle geschlossen: Jedes Konto bekommt 403, der Text des Tools steht wörtlich in der Ausgabe. Personen arbeiten im Dialog.
+- Neu: `einsendung-stand <id>`: Stand, Prüfliste und Klärung eines Auftrags und ob eine Person dran ist. Kosten und EK zeigt nur die Karte im Tool.
+- Beim Ausführen heißt 5xx, 409, Timeout oder Abbruch der Verbindung „Ausgang unklar, nicht neu starten“, nicht „Nicht gestartet“. Legt das Tool mehrere Aufträge an, stehen alle IDs in der Ausgabe, auch bei einem Teilfehler.
+- `bestellung-meilenstein` bekommt `--ueberlieferung` und `--notiz` (nur Wareneingang, nur Personen). Beide gehen in den Schlüssel ein, eine normale Meldung behält ihren Schlüssel. Vor der Migration im Tool antwortet es 503 mit verständlichem Text.
+- Prüfskript `tests/pruefe-einsendung-starten.py`, `tests/pruefe-meilenstein.py` erweitert.
+- Braucht das Tool mit `/api/brain-read/einsendungen/auftrag` (company-interface, Branch `feat/einsendung-tuer-abgeschaltet`). Mit einem älteren Tool sagt der Befehl „gibt es im Tool noch nicht“.
+
 ## 0.17.0 (06.11.2026)
 
 - `sendungen` und `sendung` zeigen je Sendung die Lage: wo die Ware ist (Angelegt, Eingeplant, Abgeholt, Zugestellt, Wird eingebucht, Abgeschlossen, Storniert), seit wann und einen Widerspruch, wenn es einen gibt. Der Status daneben bleibt die Buchung im Tool.

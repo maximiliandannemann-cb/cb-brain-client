@@ -111,9 +111,31 @@ pruefe("Positionen und Standort im Body", a and a["body"]["positionen"] == [{"sk
 code, out, a = lauf(["PO-040", "--schritt", "konfektionierer-versand", "--datum", "2026-10-27", "--menge", "1000", "--beleg", BELEG])
 pruefe("Station: Body", a and a["body"]["schritt"] == "konfektionierer-versand" and a["body"]["menge"] == 1000)
 
+# Überlieferung: nur Wareneingang, gehört in Body und Schlüssel. Der Normalfall bleibt unverändert.
+NOTIZ = "Lieferant hat 40 Stück mehr geliefert, laut Lieferschein"
+UEB = EIN + ["--ueberlieferung", "--notiz", NOTIZ]
+antwort["json"] = {"aenderung": {**AENDERUNG, "vorschau": False}}
+code, out, a = lauf(UEB)
+pruefe("Überlieferung: Vorschau mit beiden Feldern", a and a["body"]["ueberlieferung"] is True and a["body"]["notiz"] == NOTIZ and a["body"]["vorschau"] is True and len(anfragen) == 1)
+code, out, a = lauf(UEB + ["--ausfuehren"])
+s_ueb = a["body"]["idempotenz_schluessel"] if a else ""
+pruefe("Überlieferung: beim Ausführen in beiden Anfragen", len(anfragen) == 2 and all(x["body"]["ueberlieferung"] is True and x["body"]["notiz"] == NOTIZ for x in anfragen))
+pruefe("Überlieferung geht in den Schlüssel", s_ueb and s_ueb != schluessel)
+code, out, a = lauf(EIN + ["--ueberlieferung", "--notiz", NOTIZ + " (2)", "--ausfuehren"])
+pruefe("Andere Notiz: anderer Schlüssel", a and a["body"]["idempotenz_schluessel"] != s_ueb)
+code, out, a = lauf(EIN + ["--notiz", f"  {NOTIZ}\n", "--ueberlieferung", "--ausfuehren"])
+pruefe("Notiz anders geschrieben: derselbe Schlüssel", a and a["body"]["idempotenz_schluessel"] == s_ueb)
+code, out, a = lauf(EIN + ["--ausfuehren"])
+pruefe("Ohne Überlieferung: Schlüssel und Body wie vorher", a and a["body"]["idempotenz_schluessel"] == schluessel and "ueberlieferung" not in a["body"] and "notiz" not in a["body"])
+text = "Überlieferung über den Schlüssel ist im Tool noch nicht freigeschaltet (Migration 2026-11-06-tuer-a-ueberlieferung.sql fehlt). Nichts gebucht."
+antwort.update(status=503, json={"error": text})
+code, out, a = lauf(UEB)
+pruefe("Überlieferung, Migration fehlt (503): Text des Tools", code != 0 and out.strip() == f"Nicht eingetragen: {text}")
+antwort.update(status=200, json={"aenderung": AENDERUNG})
+
 # --help
 code, out, a = lauf(["--help"])
-pruefe("--help: Hilfe, keine Anfrage", code == 0 and a is None and "--ausfuehren" in out and "--beleg" in out)
+pruefe("--help: Hilfe, keine Anfrage", code == 0 and a is None and "--ausfuehren" in out and "--beleg" in out and "--ueberlieferung" in out)
 
 # Lokale Fehler: nichts wird gesendet.
 for name, args, text in [
@@ -133,6 +155,11 @@ for name, args, text in [
     ("--position falsch", ["PO-032", "--schritt", "eingang", "--datum", "2026-10-27", "--position", "A:1", "--beleg", BELEG], "SKU=Menge"),
     ("--position doppelt", ["PO-032", "--schritt", "eingang", "--datum", "2026-10-27", "--position", "A=1", "--position", "a=2", "--beleg", BELEG], "nur einmal"),
     ("--schluessel ungültig", EIN + ["--schluessel", "kurz"], "--schluessel"),
+    ("--ueberlieferung ohne --notiz", EIN + ["--ueberlieferung"], "--notiz"),
+    ("--notiz zu kurz", EIN + ["--ueberlieferung", "--notiz", "zu kurz"], "--notiz"),
+    ("--notiz zu lang", EIN + ["--ueberlieferung", "--notiz", "x" * 501], "höchstens 500"),
+    ("--notiz ohne --ueberlieferung", EIN + ["--notiz", "Lieferant hat mehr geliefert"], "--ueberlieferung"),
+    ("--ueberlieferung an einer Station", ["PO-TEST-1", "--schritt", "fertig", "--datum", "2026-10-27", "--menge", "1", "--beleg", BELEG, "--ueberlieferung", "--notiz", "Lieferant hat mehr geliefert"], "nur bei --schritt eingang"),
     ("zwei Nummern", ["PO-032", "PO-033", "--schritt", "fertig", "--datum", "2026-10-27", "--menge", "1", "--beleg", BELEG], "genau eine Nummer"),
 ]:
     code, out, a = lauf(args)
