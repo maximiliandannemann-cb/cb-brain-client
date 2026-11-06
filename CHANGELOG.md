@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.0 (06.11.2026)
+
+- Neu: `faelle`: Reklamationsfälle ab Stufe `pruefen` mit Rest, Saldo, Vorschlag und bestehender Arbeit, dazu die Zahl der Fälle, die noch zählen, und ungeprüfte Positionen (Mengen unbekannt, nie Rest 0).
+- Neu: `fall <FBA-ID> <sku>`: eine Position mit Nachbarn im Saldo, Tagen und Frist (Annahme, warnt nur), oder der Grund, warum es kein Fall ist.
+- Nur lesen: Eingereicht wird nichts, entscheiden tut ein Mensch.
+- Prüfskript `tests/pruefe-faelle.py`.
+- Braucht das Tool mit `/api/brain-read/faelle` (company-interface, Branch `feat/reklamationsfaelle`). Mit einem älteren Tool sagen beide Befehle „gibt es im Tool noch nicht“.
+
 ## 0.16.0 (06.11.2026)
 
 - Neu: `bestand-herkunft <sku>`: alle Bewegungen der SKU je Lager mit laufendem Saldo, ohne Zeitgrenze, mit PO-, Einsendungs- und Amazon-Nummer wörtlich. Sagt ausdrücklich, ob die Rechnung je Lager gleich dem Tool-Bestand ist (keine Zählung), und je Zeile, warum sie nicht zählt (#677).

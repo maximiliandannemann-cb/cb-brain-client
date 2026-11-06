@@ -37,6 +37,8 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
           cbtool.py bestand [--suche <sku|name>] [--limit <n>]
           cbtool.py bestand-herkunft <sku>               (alle Bewegungen je Lager mit Saldo, SKU wörtlich)
+          cbtool.py faelle                               (Reklamationsfälle ab Stufe pruefen, dazu ungeprüfte Positionen)
+          cbtool.py fall <FBA-ID> <sku>                  (ein Fall mit Saldo, Tagen und bestehender Arbeit, SKU wörtlich)
           cbtool.py bestellplanung [--status faellig|ueberfaellig|alle|vorschlag|angepasst|bestaetigt]
                                    [--suche <text>] [--marktplatz DE|US|alle] [--limit <n>]
           cbtool.py absatz [--suche <sku|name>] [--von YYYY-MM-DD] [--bis YYYY-MM-DD]
@@ -1596,6 +1598,103 @@ def cmd_bestand_herkunft(args: list[str]) -> None:
     _stand(res)
 
 
+# ---- Reklamationsfälle (nur lesen, eingereicht wird nichts)
+
+FAELLE_FEHLT = "Reklamationsfälle gibt es im Tool noch nicht (Route /api/brain-read/faelle fehlt)."
+ARBEIT_UNBEKANNT = {
+    "kein_recht": "Bestehende Arbeit unbekannt: Dieses Konto darf keine Aufgaben lesen.",
+    "fehler": "Bestehende Arbeit unbekannt: Aufgaben konnten gerade nicht geladen werden.",
+}
+
+
+def _faelle_get(pfad: str) -> dict:
+    try:
+        return _ware_get(pfad)
+    except SystemExit as e:
+        # Die Route antwortet bei Unbekanntem mit Text; ohne Text fehlt die Route selbst (älteres Tool).
+        if e.code == "Tool antwortet 404.":
+            raise SystemExit(FAELLE_FEHLT)
+        raise
+
+
+def _arbeit_text(liste) -> str | None:
+    if liste is None:
+        return None
+    if not liste:
+        return "keine offene Aufgabe gefunden"
+    return ", ".join(f"{a.get('nr')} ({a.get('fuer') or 'niemand'}, {a.get('status')})" for a in liste)
+
+
+def _bezug_text(z: dict) -> str | None:
+    return z.get("einsendung") or ", ".join(z.get("bestellungen") or []) or None
+
+
+def _fall_zeile(f: dict) -> str:
+    teile = [f.get("fbaId"), f.get("sku"), _bezug_text(f), f.get("stufe"), f"Amazon {f.get('status')}", f"{_n(f.get('eingebucht'))} von {_n(f.get('versandt'))} eingebucht", f"Rest {_n(f.get('rest'))}", f"Saldo {_n(f.get('saldo'))}"]
+    return " · ".join(t for t in teile if t)
+
+
+def _ungeprueft_zeile(u: dict) -> str:
+    return " · ".join(t for t in (u.get("fbaId"), u.get("sku"), _bezug_text(u), u.get("grund")) if t)
+
+
+def cmd_faelle(args: list[str]) -> None:
+    _rest_leer(args)
+    res = _faelle_get("/faelle")
+    liste = res.get("faelle") or []
+    je = ", ".join(f"{k} {_n(v)}" for k, v in (res.get("jeStufe") or {}).items())
+    print(f"Reklamationsfälle: {_n(res.get('anzahl', len(liste)))}" + (f" ({je})" if je else "") + f". Zählt noch: {_n(res.get('zaehltNoch'))}.")
+    for f in liste:
+        print(_fall_zeile(f))
+        print(f"  {f.get('vorschlag')}")
+        for h in f.get("hinweise") or []:
+            print(f"  Hinweis: {h}")
+        arbeit = _arbeit_text(f.get("bestehendeArbeit"))
+        if arbeit:
+            print(f"  Bestehende Arbeit: {arbeit}")
+    ungeprueft = res.get("ungeprueft") or []
+    if ungeprueft:
+        print(f"Ungeprüft, Mengen unbekannt ({_n(len(ungeprueft))}):")
+        for u in ungeprueft:
+            arbeit = _arbeit_text(u.get("bestehendeArbeit"))
+            print("  " + _ungeprueft_zeile(u) + (f" · Arbeit: {arbeit}" if arbeit and u.get("bestehendeArbeit") else ""))
+    if res.get("arbeit") in ARBEIT_UNBEKANNT:
+        print(ARBEIT_UNBEKANNT[res["arbeit"]])
+    _stand(res)
+
+
+def cmd_fall(args: list[str]) -> None:
+    if len(args) != 2 or any(not a.strip() or a.startswith("-") for a in args):
+        _falsch("fall braucht FBA-ID und SKU, beide wörtlich wie in der Ausgabe von faelle oder sendung.")
+    res = _faelle_get("/faelle/" + "/".join(urllib.parse.quote(a.strip(), safe="") for a in args))
+    if res.get("keinFall"):
+        k = res["keinFall"]
+        print(f"{k.get('fbaId')} · {k.get('sku')}: kein Fall. {k.get('grund')}")
+    elif res.get("ungeprueft"):
+        print("Ungeprüft: " + _ungeprueft_zeile(res["ungeprueft"]))
+    else:
+        f = res.get("fall") or {}
+        print(_fall_zeile(f))
+        print(f.get("vorschlag"))
+        if f.get("lager") or f.get("absender"):
+            print(" · ".join(t for t in (f"Lager {f['lager']}" if f.get("lager") else None, f"Absender {f['absender']}" if f.get("absender") else None) if t))
+        for n in f.get("nachbarn") or []:
+            mengen = f"{_n(n.get('eingebucht'))} von {_n(n.get('versandt'))}, zählt {_n(n.get('beitrag'))}" if n.get("beitrag") is not None else "Mengen unbekannt"
+            print(" · ".join(t for t in ("Nachbar " + str(n.get("fbaId")), n.get("status"), n.get("absender"), _datum_text(n.get("sendungsdatum")), mengen) if t))
+        t = f.get("tage") or {}
+        zustellung = _datum_text(t.get("zustellung")) or "unbekannt"
+        print(f"Tage: Sendungsdatum {_datum_text(t.get('sendungsdatum')) or 'unbekannt'}, Zustellung {zustellung}" + ("" if t.get("zustellungSicher") else " (unsicher)") + f", Abschluss {_datum_text(t.get('abschluss')) or 'offen'}, reklamierbar ab {_datum_text(t.get('reklamierbarAb')) or 'unbekannt'}")
+        print(f"Frist: {_datum_text(t.get('fristBis')) or 'unbekannt'} ({t.get('fristQuelle')}), warnt nur")
+        for h in f.get("hinweise") or []:
+            print(f"Hinweis: {h}")
+    arbeit = _arbeit_text((res.get("fall") or res.get("ungeprueft") or {}).get("bestehendeArbeit"))
+    if arbeit:
+        print(f"Bestehende Arbeit: {arbeit}")
+    if res.get("arbeit") in ARBEIT_UNBEKANNT:
+        print(ARBEIT_UNBEKANNT[res["arbeit"]])
+    _stand(res)
+
+
 # ---- Bestellplanung
 
 PLAN_STATUS = ("faellig", "ueberfaellig", "alle", "vorschlag", "angepasst", "bestaetigt")
@@ -1746,6 +1845,8 @@ WARE = {
     "sendung": cmd_sendung,
     "bestand": cmd_bestand,
     "bestand-herkunft": cmd_bestand_herkunft,
+    "faelle": cmd_faelle,
+    "fall": cmd_fall,
     "bestellplanung": cmd_bestellplanung,
     "absatz": cmd_absatz,
 }
