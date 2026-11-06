@@ -31,6 +31,7 @@ Relative Zeiträume („letzte Woche“, „seit August“) vom heutigen Datum a
 ## Antworten
 
 - PO-Nummern, SKUs und Amazon-Shipment-IDs wortwörtlich aus der Ausgabe übernehmen, nie kürzen oder umschreiben. Der Nutzer darf „PO-049“ sagen, die Antwort nennt die volle Nummer.
+- „Wo ist die Ware?“ beantwortet die Lage (`Lage Wird eingebucht seit …`), nicht der Status: Der Status ist die Buchung im Tool. Lage-Aufteilung in `bestand` nicht mit „unterwegs“ addieren, sie ist ein Teil davon; „ohne Einsendung“ steht nicht darin.
 - Status-Texte („+2 T überfällig“, „Fertig, liegt 6 T“) unverändert wiedergeben. Zahlen nicht selbst summieren oder umrechnen, wenn die Ausgabe sie schon zeigt.
 - Immer den Stand nennen (letzte Zeile der Ausgabe, z. B. „Amazon-Bestand vom 13.10.“), bei Amazon-Zahlen besonders, weil sie einen Tag oder mehr hinterherlaufen.
 - Bei einer einzelnen PO, Sendung oder einem Produkt den Link aus der Ausgabe mitgeben.

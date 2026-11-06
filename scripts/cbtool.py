@@ -1355,8 +1355,17 @@ def cmd_sendung_abholen(args: list[str]) -> None:
 
 # ---- Sendungen
 
+def _lage_text(s: dict) -> str | None:
+    """Wo die Ware ist, rechnet das Tool. Älteres Tool ohne das Feld: None, dann bleibt die Ausgabe wie vorher."""
+    if not s.get("lage"):
+        return None
+    return "Lage " + s["lage"] + (f" seit {_zeitpunkt(s['seit'])}" if s.get("seit") else "") + (f" ({s['widerspruch']})" if s.get("widerspruch") else "")
+
+
 def _sendung_zeile(s: dict) -> str:
     teile = [s.get("nr") or "?", s.get("amazonId") or "ohne Amazon-ID", s.get("status") or "?"]
+    if _lage_text(s):
+        teile.append(_lage_text(s))
     if s.get("von"):
         teile.append(f"von {s['von']}")
     teile.append(f"ETA {_datum_text(s['eta'])}" if s.get("eta") else "ohne ETA")
@@ -1448,6 +1457,8 @@ def cmd_sendung(args: list[str]) -> None:
     a = res.get("ohneEinsendung")
     if a:
         print(f"{a.get('amazonId')} · keine Einsendung im Tool ({a.get('art')})")
+        if _lage_text(a):
+            print(_lage_text(a))
         _felder((
             ("Bestellungen", ", ".join(a.get("bestellungen") or []) or "keine trägt diese Amazon-ID"),
             ("Amazon-Status", a.get("amazonStatus") or "unbekannt"),
@@ -1466,6 +1477,8 @@ def cmd_sendung(args: list[str]) -> None:
         return
     s = res.get("sendung") or {}
     print(f"{s.get('nr')} · {s.get('status')}")
+    if _lage_text(s):
+        print(_lage_text(s))
     _felder((
         ("Amazon-Shipment-ID", s.get("amazonId") or "noch keine"),
         ("Gruppe", s.get("gruppe")),
@@ -1525,6 +1538,15 @@ def _bestand_einzeln(b: dict) -> None:
     for a in (b.get("unterwegs") or {}).get("anlieferungen") or []:
         spaet = f" (+{a['ueberfaelligTage']} T überfällig)" if a.get("ueberfaelligTage") else ""
         print(f"    unterwegs: {a.get('ref')} · {a.get('art')} · {_n(a.get('stueck'))} St. · ETA {_datum_text(a.get('eta')) or '–'}{spaet}")
+    # Älteres Tool ohne die Felder: keine Zeile. nachLage teilt die Sendungen in „unterwegs“ auf, ohneEinsendung steht nicht darin.
+    if "nachLage" in b:
+        teile = ", ".join(f"{stufe} {_n(stueck)}" for stufe, stueck in (b.get("nachLage") or {}).items())
+        print(f"    Einsendungen nach Lage: {teile or 'nichts offen'}")
+    if "ohneEinsendung" in b:
+        if b["ohneEinsendung"] is None:
+            print("    ohne Einsendung: unbekannt, die Amazon-Daten konnten gerade nicht geladen werden")
+        for z in b["ohneEinsendung"] or []:
+            print(f"    ohne Einsendung: {z.get('amazonId')} · {z.get('art')} · {_lage_text(z) or 'Lage unbekannt'} · {_mengen_text(z)} · offen {_menge_text(z.get('offen'))}")
     print(f"    Link: {b.get('link')}")
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 (06.11.2026)
+
+- `sendungen` und `sendung` zeigen je Sendung die Lage: wo die Ware ist (Angelegt, Eingeplant, Abgeholt, Zugestellt, Wird eingebucht, Abgeschlossen, Storniert), seit wann und einen Widerspruch, wenn es einen gibt. Der Status daneben bleibt die Buchung im Tool.
+- `bestand` zeigt bei wenigen Treffern, wie sich die Sendungen in „unterwegs“ auf die Lagen verteilen, und daneben Amazon-Sendungen ohne Einsendung. Die zählen nicht in „unterwegs“. Fehlen die Amazon-Daten, steht dort „unbekannt“.
+- Prüfskript `tests/pruefe-sendung-lage.py`.
+- Braucht das Tool mit `src/lib/sendung-lauf.ts` (company-interface, Branch `feat/sendung-lage`). Mit einem älteren Tool bleibt die Ausgabe wie bisher.
+
 ## 0.16.0 (06.11.2026)
 
 - Neu: `bestand-herkunft <sku>`: alle Bewegungen der SKU je Lager mit laufendem Saldo, ohne Zeitgrenze, mit PO-, Einsendungs- und Amazon-Nummer wörtlich. Sagt ausdrücklich, ob die Rechnung je Lager gleich dem Tool-Bestand ist (keine Zählung), und je Zeile, warum sie nicht zählt (#677).
