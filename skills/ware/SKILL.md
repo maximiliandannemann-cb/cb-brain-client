@@ -5,7 +5,7 @@ description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplan
 
 # /ware
 
-Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit vier Ausnahmen, alle nur auf Wort der Person: `bestellung-eta` verschiebt den bestätigten Termin einer PO, `bestellung-meilenstein` meldet einen Meilenstein oder Wareneingang, `einsendung-status` meldet eine Einsendung als abgeholt oder eingebucht, `sendung-abholen` erfasst die Abholung einer Direktlieferung (Abschnitte unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
+Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen, mit fünf Ausnahmen, alle nur auf Wort der Person: `bestellung-eta` verschiebt den bestätigten Termin einer PO, `bestellung-meilenstein` meldet einen Meilenstein oder Wareneingang, `einsendung-status` meldet eine Einsendung als abgeholt oder eingebucht, `sendung-abholen` erfasst die Abholung einer Direktlieferung, `einsendung-starten` startet einen Einsendungs-Auftrag (Abschnitte unten). Sonst ändert kein Befehl etwas. Derselbe Schlüssel wie fürs Wiki.
 
 ## Welcher Befehl
 
@@ -23,6 +23,8 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 
 | Termin einer PO verschieben (nur nach Ja) | `bestellung-eta PO-020 --eta YYYY-MM-DD --grund "<satz>" [--quelle <link>]`, erst ohne, dann mit `--ausfuehren` |
 | Meilenstein oder Wareneingang melden (nur nach Ja) | `bestellung-meilenstein PO-032 --schritt fertig\|konfektionierer-eingang\|konfektionierer-versand\|eingang --datum YYYY-MM-DD --menge <n> --beleg "<satz>"`, erst ohne, dann mit `--ausfuehren` |
+| Einsendung starten (nur nach Ja) | `einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<n> --beleg "<satz>"`, erst ohne, dann mit `--ausfuehren` |
+| Stand eines Einsendungs-Auftrags, Prüfliste, Klärung | `einsendung-stand <id>` |
 | Einsendung abgeholt oder eingebucht melden (nur nach Ja) | `einsendung-status IN-2026-0046 --schritt abgeholt\|eingebucht --datum YYYY-MM-DD --beleg "<satz>" --grund "<satz>"`, erst ohne, dann mit `--ausfuehren` |
 | Abholung einer Direktlieferung erfassen (nur nach Ja) | `sendung-abholen PO-032 PO-033 --datum YYYY-MM-DD --amazon FBA… --beleg "<satz>" --grund "<satz>" [--spediteur <name>]`, erst ohne, dann mit `--ausfuehren` |
 
@@ -59,8 +61,20 @@ Was nicht geht, und was dann zu tun ist:
 1. `bestellung <nr>` lesen. Dann `bestellung-meilenstein … --beleg "<satz>"` **ohne** `--ausfuehren`: das ist die Vorschau, das Tool rechnet die Buchung durch und schreibt nichts. Die Vorschau der Person zeigen (Station, Status alt › neu, beim Eingang Lager und „bestandswirksam“).
 2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`. Ein Ja gilt nur für die gezeigte Meldung.
 3. `--beleg` ist Pflicht: woher die Information kommt, mit Link (Mail über die Composio-CLI, Lieferschein, Tracking). Nie erfinden.
-4. Menge wie gemeldet, nie schätzen. Mehr als offen, Nachträge an angelieferten POs, Stornos und Überlieferung: lehnt das Tool ab, ins Tool verweisen.
+4. Menge wie gemeldet, nie schätzen. Mehr als offen, Nachträge an angelieferten POs und Stornos: lehnt das Tool ab, ins Tool verweisen.
+   Überlieferung (Menge über offen, auch an einer angelieferten PO): nur beim Wareneingang mit `--ueberlieferung --notiz "<warum mehr als bestellt>"`, nur auf ausdrückliches Ja zur Mehrmenge. Bots lehnt das Tool ab (403): als Aufgabe an die Person melden. „Noch nicht freigeschaltet“ (503) heißt: Die Migration im Tool fehlt, im Tool buchen.
 5. „Schon eingetragen“ heißt: dieselbe Meldung lief schon, nichts doppelt. „Schon erfasst“ heißt: gleiche Station, Datum und Menge stehen schon im Tool.
+
+## Einsendung starten, nur auf Wort der Person
+
+Heute ist die Tür im Tool für alle geschlossen: `einsendung-starten` antwortet 403, Einsendungen laufen über den Dialog im Tool. Der Ablauf gilt, sobald das Tool ein Konto freischaltet.
+
+1. `einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<n> --beleg "<satz>"` **ohne** `--ausfuehren`: Vorschau, das Tool prüft den Antrag, ruft Amazon nicht und schreibt nichts. SKU wörtlich aus dem Tool. Der Person zeigen: Lager, Positionen, Kartons, Befunde. MHD, wo das Tool es verlangt: `--position SKU=<n>@JJJJ-MM-TT`, nie raten.
+2. Erst nach ausdrücklichem Ja denselben Befehl mit `--ausfuehren`. Der Start ruft Amazon. Ein Ja gilt nur für den gezeigten Antrag.
+3. Dann `einsendung-stand <id>`. Steht dort „Eine Person ist dran“: der Person sagen, was der Stand nennt. Transport und kostenpflichtige Lager bestätigt nur eine Person im Tool, die Mail bleibt ein Entwurf, den die Person sendet. Ein Lager, dessen Optionen alle 0 € kosten (eine oder mehrere gleichwertige), bestätigt das Tool selbst. Kosten und EK zeigt nur die Karte im Tool.
+4. 403 „darf keine Einsendungen starten“ heißt: Diese Tür ist für das Konto nicht freigeschaltet. Nicht umgehen, an die Person übergeben.
+5. „Schon gestartet“ heißt: derselbe Befehl lief heute schon, nichts doppelt. „Ausgang unklar, nicht neu starten“: nie mit neuem Schlüssel wiederholen. Derselbe Befehl am selben Tag fragt nur nach und startet nicht neu, sonst im Tool prüfen.
+6. „Teilweise gestartet“: Die genannten Aufträge laufen, für den Rest die Person fragen. Nie „nicht gestartet“ sagen. Mehrere IDs: je `einsendung-stand <id>`.
 
 ## Einsendung abgeholt oder eingebucht melden, nur auf Wort der Person
 
@@ -84,7 +98,7 @@ Was nicht geht, und was dann zu tun ist:
 - **Conversion über 100 % oder mit „zu hoch“:** Für Tage vor dem 11.07.2026 (alte Flieber-Historie) fehlen die Sitzungen. Den Hinweis aus der Ausgabe weitergeben, die Zahl nicht deuten; für eine belastbare Conversion den Zeitraum ab 11.07.2026 abfragen.
 - Shops zeigen Umsatz nur je Shop, je Produkt nur Stück und Bestellungen (so wie das Tool). Keine Aufteilung selbst rechnen.
 - Keine Mails senden. Eine Rückfrage an einen Lieferanten höchstens als Entwurf im Chat.
-- Schreiben nur über `bestellung-eta`, `bestellung-meilenstein`, `einsendung-status` und `sendung-abholen`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Einsendungen anlegen geht nicht.
+- Schreiben nur über `bestellung-eta`, `bestellung-meilenstein`, `einsendung-status`, `sendung-abholen` und `einsendung-starten`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Transport bestätigen und Abbrechen gehen nur im Tool.
 
 ## Fehler
 
