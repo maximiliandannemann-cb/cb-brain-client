@@ -1356,9 +1356,11 @@ def cmd_sendung_abholen(args: list[str]) -> None:
 # ---- Sendungen
 
 def _lage_text(s: dict) -> str | None:
-    """Wo die Ware ist, rechnet das Tool. Älteres Tool ohne das Feld: None, dann bleibt die Ausgabe wie vorher."""
-    if not s.get("lage"):
+    """Wo die Ware ist, rechnet das Tool. Älteres Tool ohne das Feld: None, dann bleibt die Ausgabe wie vorher. lage null: Amazon-Daten fehlen."""
+    if "lage" not in s:
         return None
+    if s["lage"] is None:
+        return "Lage unbekannt, Amazon-Daten nicht geladen"
     return "Lage " + s["lage"] + (f" seit {_zeitpunkt(s['seit'])}" if s.get("seit") else "") + (f" ({s['widerspruch']})" if s.get("widerspruch") else "")
 
 
@@ -1538,15 +1540,21 @@ def _bestand_einzeln(b: dict) -> None:
     for a in (b.get("unterwegs") or {}).get("anlieferungen") or []:
         spaet = f" (+{a['ueberfaelligTage']} T überfällig)" if a.get("ueberfaelligTage") else ""
         print(f"    unterwegs: {a.get('ref')} · {a.get('art')} · {_n(a.get('stueck'))} St. · ETA {_datum_text(a.get('eta')) or '–'}{spaet}")
-    # Älteres Tool ohne die Felder: keine Zeile. nachLage teilt die Sendungen in „unterwegs“ auf, ohneEinsendung steht nicht darin.
+    # Älteres Tool ohne die Felder: keine Zeile. nachLage teilt die Sendungen in „unterwegs“ auf. ohneEinsendung steht nicht in nachLage;
+    # Art bestellung und Direktlieferungen können in „unterwegs“ stecken, nicht addieren.
     if "nachLage" in b:
-        teile = ", ".join(f"{stufe} {_n(stueck)}" for stufe, stueck in (b.get("nachLage") or {}).items())
-        print(f"    Einsendungen nach Lage: {teile or 'nichts offen'}")
+        if b["nachLage"] is None:
+            print("    Einsendungen nach Lage: unbekannt, die Amazon-Daten konnten gerade nicht geladen werden")
+        else:
+            teile = ", ".join(f"{stufe} {_n(stueck)}" for stufe, stueck in b["nachLage"].items())
+            print(f"    Einsendungen nach Lage: {teile or 'nichts offen'}")
     if "ohneEinsendung" in b:
         if b["ohneEinsendung"] is None:
             print("    ohne Einsendung: unbekannt, die Amazon-Daten konnten gerade nicht geladen werden")
         for z in b["ohneEinsendung"] or []:
             print(f"    ohne Einsendung: {z.get('amazonId')} · {z.get('art')} · {_lage_text(z) or 'Lage unbekannt'} · {_mengen_text(z)} · offen {_menge_text(z.get('offen'))}")
+        if b["ohneEinsendung"]:
+            print("    ohne Einsendung steht nicht in der Lage-Aufteilung; Art bestellung und Direktlieferungen können in „unterwegs“ stecken, nicht addieren")
     print(f"    Link: {b.get('link')}")
 
 

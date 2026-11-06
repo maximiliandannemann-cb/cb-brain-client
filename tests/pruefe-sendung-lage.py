@@ -68,6 +68,9 @@ pruefe("sendungen: Widerspruch wörtlich, Tag als seit", "Lage Abgeschlossen sei
 aus = lauf(["sendungen"], {"sendungen": [dict(KOPF, lage="Abgeholt", seit=None, widerspruch=None)], "anzahl": 1, "stand": STAND})
 pruefe("sendungen: seit unbekannt, kein „seit None“", "· Lage Abgeholt ·" in aus and "None" not in aus, aus)
 
+aus = lauf(["sendungen"], {"sendungen": [dict(KOPF, lage=None, seit=None, widerspruch=None)], "anzahl": 1, "mengenNichtGeladen": True, "stand": STAND})
+pruefe("sendungen: Amazon-Daten fehlen, Grund genannt", "AMZ-1 · Abgeholt · Lage unbekannt, Amazon-Daten nicht geladen" in aus, aus)
+
 # sendung
 aus = lauf(["sendung", "EIN-1"], {"sendung": dict(KOPF, **LAGE), "stand": STAND})
 pruefe("sendung: Lage", "Lage Wird eingebucht seit" in aus, aus)
@@ -87,8 +90,11 @@ alt = lauf(["bestand", "--suche", "SKU-A"], {"bestand": [B], "anzahl": 1, "stand
 pruefe("bestand, älteres Tool: keine neue Zeile", "Lage" not in alt.replace("Lager", "") and "ohne Einsendung" not in alt, alt)
 gleich = [z for z in neu.splitlines() if "nach Lage" not in z and "ohne Einsendung" not in z]
 pruefe("bestand: außer den zwei Zeilen alles gleich", gleich == alt.splitlines(), neu + alt)
-aus = lauf(["bestand", "--suche", "SKU-A"], {"bestand": [dict(B, nachLage={}, ohneEinsendung=None)], "anzahl": 1, "mengenNichtGeladen": True, "stand": STAND})
-pruefe("bestand: Amazon-Daten fehlen, unbekannt und nie leer", "ohne Einsendung: unbekannt" in aus and "nichts offen" in aus, aus)
+aus = lauf(["bestand", "--suche", "SKU-A"], {"bestand": [dict(B, nachLage=None, ohneEinsendung=None)], "anzahl": 1, "mengenNichtGeladen": True, "stand": STAND})
+pruefe("bestand: Amazon-Daten fehlen, Grund genannt, nie leer", "nach Lage: unbekannt, die Amazon-Daten" in aus and "ohne Einsendung: unbekannt, die Amazon-Daten" in aus and "nichts offen" not in aus, aus)
+aus = lauf(["bestand", "--suche", "SKU-A"], {"bestand": [dict(B, nachLage={}, ohneEinsendung=[])], "anzahl": 1, "stand": STAND})
+pruefe("bestand: nichts offen, kein Hinweis ohne Zeile", "nichts offen" in aus and "nicht addieren" not in aus, aus)
+pruefe("bestand: Hinweis gegen Doppelzählung", "nicht addieren" in neu, neu)
 aus = lauf(["bestand", "--suche", "SKU-A"], {"bestand": [dict(B, nachLage={}, ohneEinsendung=[dict(Z, versandt=None, eingebucht=None, offen=None)])], "anzahl": 1, "stand": STAND})
 pruefe("bestand: Menge unbekannt, nie 0", "versandt unbekannt" in aus and "offen unbekannt" in aus, aus)
 

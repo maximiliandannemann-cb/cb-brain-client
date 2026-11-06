@@ -3,7 +3,7 @@
 ## 0.17.0 (06.11.2026)
 
 - `sendungen` und `sendung` zeigen je Sendung die Lage: wo die Ware ist (Angelegt, Eingeplant, Abgeholt, Zugestellt, Wird eingebucht, Abgeschlossen, Storniert), seit wann und einen Widerspruch, wenn es einen gibt. Der Status daneben bleibt die Buchung im Tool.
-- `bestand` zeigt bei wenigen Treffern, wie sich die Sendungen in „unterwegs“ auf die Lagen verteilen, und daneben Amazon-Sendungen ohne Einsendung. Die zählen nicht in „unterwegs“. Fehlen die Amazon-Daten, steht dort „unbekannt“.
+- `bestand` zeigt bei wenigen Treffern, wie sich die Sendungen in „unterwegs“ auf die Lagen verteilen, und daneben Amazon-Sendungen ohne Einsendung. Die stehen nicht in der Aufteilung; Art `bestellung` und Direktlieferungen können in „unterwegs“ stecken, also nicht addieren. Fehlen die Amazon-Daten, stehen Lage, Aufteilung und ohne Einsendung als „unbekannt“.
 - Prüfskript `tests/pruefe-sendung-lage.py`.
 - Braucht das Tool mit `src/lib/sendung-lauf.ts` (company-interface, Branch `feat/sendung-lage`). Mit einem älteren Tool bleibt die Ausgabe wie bisher.
 
