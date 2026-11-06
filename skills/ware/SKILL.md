@@ -17,6 +17,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Eine Sendung, mit versandt, eingebucht, offen je Position | `sendung IN-2026-0039` oder `sendung FBA15MM4GTB5` |
 | Wo liegen Tool und Amazon auseinander? | `sendungen --abweichung`, `--status offen`, `--suche <Teil>` |
 | Wie viel liegt wo? | `bestand --suche <SKU oder Name>` (ohne Suche alle Produkte) |
+| Woher kommt der Bestand? Stimmt die Zahl? | `bestand-herkunft <SKU>` (SKU wörtlich): alle Bewegungen je Lager mit Saldo und Beleg, ohne Zeitgrenze, und ob die Endsumme gleich dem Lagerbestand ist |
 | Wann muss die nächste Bestellung raus? | `bestellplanung`, `--status faellig` (nächste 4 Wochen) oder `ueberfaellig`, `--marktplatz DE\|US`, `--suche` |
 | Wie lief Produkt X? | `absatz --suche <SKU oder Name>`, Zeitraum `--von/--bis YYYY-MM-DD` (Standard 30 Tage bis gestern, höchstens 400), `--kanal amazon\|shop`, `--je tag\|woche` für den Verlauf |
 
