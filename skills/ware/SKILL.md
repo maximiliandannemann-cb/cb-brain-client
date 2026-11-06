@@ -14,7 +14,8 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Was ist bestellt, was hängt, was kommt wann? | `bestellungen` (offene), `--status alle` mit Angelieferten, `--suche <PO, Lieferant, Produkt, SKU>` |
 | Eine bestimmte PO | `bestellung PO-049` (Anfang reicht, wenn eindeutig) |
 | Was ist unterwegs zu Amazon? | `sendungen`, `--status alle`, `--suche <Nummer, Amazon-ID, Lager, SKU>` |
-| Eine Sendung | `sendung IN-2026-0039` oder `sendung FBA15MM4GTB5` |
+| Eine Sendung, mit versandt, eingebucht, offen je Position | `sendung IN-2026-0039` oder `sendung FBA15MM4GTB5` |
+| Wo liegen Tool und Amazon auseinander? | `sendungen --abweichung`, `--status offen`, `--suche <Teil>` |
 | Wie viel liegt wo? | `bestand --suche <SKU oder Name>` (ohne Suche alle Produkte) |
 | Wann muss die nächste Bestellung raus? | `bestellplanung`, `--status faellig` (nächste 4 Wochen) oder `ueberfaellig`, `--marktplatz DE\|US`, `--suche` |
 | Wie lief Produkt X? | `absatz --suche <SKU oder Name>`, Zeitraum `--von/--bis YYYY-MM-DD` (Standard 30 Tage bis gestern, höchstens 400), `--kanal amazon\|shop`, `--je tag\|woche` für den Verlauf |
@@ -87,5 +88,6 @@ Was nicht geht, und was dann zu tun ist:
 
 - „… ist nicht eindeutig. Möglich: …“: die passende Nummer aus der Liste wählen, wenn die Frage es eindeutig macht, sonst nachfragen.
 - „Nicht geändert: …“ (bei `bestellung-eta`): die Meldung des Tools wörtlich weitergeben, nicht anders versuchen. „Bitte kurz begründen …“: die Person nach einem Satz Grund fragen. „noch nicht freigeschaltet“ oder „gibt es im Tool noch nicht“: im Tool eintragen lassen.
+- Amazon-Mengen: „unbekannt“ heißt nicht gespeichert, nie 0 lesen. Der Abgleich führt sie seit 03.11. für Sendungen, die Amazon seitdem geändert hat. Eine Direktlieferung hat keine Einsendung: `sendung <FBA-ID>` nennt die Bestellung. `offen` ist in `sendung` Amazons Rest (versandt minus eingebucht). „noch unterwegs“, „zugestellt“ und „wird gerade eingebucht“ sind kein Grund zur Reklamation; eine Abweichung steht ausdrücklich dabei.
 - „… gibt es nicht“: mit `bestellungen --status alle --suche <Teil>` oder `sendungen --status alle --suche <Teil>` suchen.
 - „Kein Schlüssel“ oder 401: `/wiki-setup` nennen. „Für diesen Bereich hast du keinen Zugang“: so weitergeben.
