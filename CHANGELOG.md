@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0 (06.11.2026)
+
+- `sendung <IN-Nummer oder FBA-ID>` zeigt je Position versandt, eingebucht und offen samt Stand der Amazon-Daten. Fehlende Mengen stehen als „unbekannt“, nie als 0. `offen` bleibt der Zulauf des Tools.
+- `sendung <FBA-ID>` einer Direktlieferung ohne Einsendung nennt die Bestellung und, soweit gespeichert, die Mengen.
+- Neu: `sendungen --abweichung` (Standard `--status alle`, `--limit 200`): Sendungen, bei denen Tool und Amazon auseinanderliegen; am Ende, wie viele wegen unbekannter Mengen nicht geprüft sind. Was eine Abweichung ist, entscheidet das Tool.
+- Prüfskript `tests/pruefe-sendung-mengen.py`.
+- Braucht das Tool mit `src/lib/amazon-mengen.ts` (company-interface, Branch `feat/sendung-mengen`). Mit einem älteren Tool bleibt `sendung` wie bisher, `sendungen --abweichung` sagt „gibt es im Tool noch nicht“.
+
 ## 0.14.0 (05.11.2026)
 
 - Neu: `/projekte` und die Projekt-Akte des Tools. `cbtool.py projekte [--ausnahmen | --neu-seit YYYY-MM-DD | --ref <nummer>]` (Kennung, Name, Stand, wer dran ist) und `cbtool.py projekt <P-n|Name|SKU> [--schritte-alle]` (Ziel, Stand, Schritte, Pflichtpunkte, Bezüge, `Stand:`-Zeile).

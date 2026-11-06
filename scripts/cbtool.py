@@ -33,7 +33,7 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|wartet|erl
 
 Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>]
           cbtool.py bestellung PO-049                    (wörtlich oder eindeutiger Anfang)
-          cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>]
+          cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>] [--abweichung]
           cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
           cbtool.py bestand [--suche <sku|name>] [--limit <n>]
           cbtool.py bestellplanung [--status faellig|ueberfaellig|alle|vorschlag|angepasst|bestaetigt]
@@ -1371,11 +1371,52 @@ def _sendung_zeile(s: dict) -> str:
     return " · ".join(teile)
 
 
+def _menge_text(x) -> str:
+    """Amazon-Menge: fehlt sie, ist sie unbekannt, nie 0."""
+    return "unbekannt" if x is None else _n(x)
+
+
+def _mengen_text(p: dict) -> str:
+    return f"versandt {_menge_text(p.get('versandt'))} · eingebucht {_menge_text(p.get('eingebucht'))}"
+
+
+def _abweichungen(liste: list, ohne: list, res: dict) -> None:
+    """Abweichungen je Position; das Tool entscheidet, was eine ist (positionMengen), hier wird nichts gerechnet."""
+    if not liste and not ohne:
+        print("Keine Abweichung zwischen Tool und Amazon erkannt.")
+    for s in liste:
+        print(f"{s.get('nr')} · {s.get('amazonId') or 'ohne Amazon-ID'} · {s.get('status')}" + (f" · Amazon {s['amazon'].get('status')}, Stand {_zeitpunkt(s['amazon'].get('stand'))}" if s.get("amazon") else ""))
+        for p in s.get("positionen") or []:
+            if p.get("abweichung"):
+                print(f"  {p.get('sku')} · {_mengen_text(p)} · {p['abweichung']}")
+        for p in s.get("nurBeiAmazon") or []:
+            print(f"  {p.get('sku')} · {_mengen_text(p)} · nur bei Amazon, nicht in der Einsendung")
+    for a in ohne:
+        kopf = f"{a.get('amazonId')} · {a.get('art')}" + (f" · {', '.join(a['bestellungen'])}" if a.get("bestellungen") else "")
+        print(f"{kopf} · Amazon {a.get('amazonStatus')}, Stand {_zeitpunkt(a.get('stand'))}")
+        for p in a.get("positionen") or []:
+            if p.get("abweichung"):
+                print(f"  {p.get('sku')} · {_mengen_text(p)} · {p['abweichung']}")
+    if res.get("gekuerzt") or res.get("ohneEinsendungGekuerzt"):
+        print("Gekürzt: mit --suche eingrenzen.")
+    if res.get("mengenUnbekannt"):
+        print(f"Nicht geprüft: {_n(res['mengenUnbekannt'])} Sendungen, deren Amazon-Mengen unbekannt sind.")
+
+
 def cmd_sendungen(args: list[str]) -> None:
     status = _wahl(_wert(args, "--status"), "--status", ("offen", "alle"))
     suche = _wert(args, "--suche")
     limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
+    abweichung = _schalter(args, "--abweichung")
     _rest_leer(args)
+    if abweichung:
+        # Der Abgleich sucht vor allem in Abgeschlossenem: Standard alle, nicht offen.
+        res = _ware_get("/sendungen", {"status": status or "alle", "suche": suche, "limit": limit or 200, "abweichung": "ja"})
+        if "ohneEinsendung" not in res:
+            raise SystemExit("Amazon-Mengen gibt es im Tool noch nicht.")
+        _abweichungen(res.get("sendungen") or [], res.get("ohneEinsendung") or [], res)
+        _stand(res)
+        return
     res = _ware_get("/sendungen", {"status": status, "suche": suche, "limit": limit})
     liste = res.get("sendungen") or []
     art = "Offene Sendungen" if (status or "offen") == "offen" else "Sendungen"
@@ -1393,6 +1434,20 @@ def cmd_sendungen(args: list[str]) -> None:
 
 def cmd_sendung(args: list[str]) -> None:
     res = _ware_get("/sendungen/" + _ref(args, "sendung", "IN-2026-0039 oder FBA15MM4GTB5"))
+    a = res.get("ohneEinsendung")
+    if a:
+        print(f"{a.get('amazonId')} · keine Einsendung im Tool ({a.get('art')})")
+        _felder((
+            ("Bestellungen", ", ".join(a.get("bestellungen") or []) or "keine trägt diese Amazon-ID"),
+            ("Amazon-Status", a.get("amazonStatus") or "unbekannt"),
+            ("Amazon-Lager", a.get("lager") or "unbekannt"),
+            ("Amazon-Mengen, Stand", _zeitpunkt(a.get("stand")) or "unbekannt, der Abgleich hat diese Sendung nicht gespeichert"),
+        ))
+        print("Positionen:")
+        for p in a.get("positionen") or []:
+            print(f"  {p.get('sku')} · {p.get('produkt')} · {_mengen_text(p)}" + (f" · {p['abweichung']}" if p.get("abweichung") else ""))
+        _stand(res)
+        return
     s = res.get("sendung") or {}
     print(f"{s.get('nr')} · {s.get('status')}")
     _felder((
@@ -1405,11 +1460,20 @@ def cmd_sendung(args: list[str]) -> None:
         ("Kartons", _n(s["kartons"]) if s.get("kartons") is not None else "keine Angabe"),
         ("Link", s.get("link")),
     ))
+    # Ältere Tool-Stände liefern das Feld nicht: dann keine Mengenzeile, statt „unbekannt“ zu behaupten.
+    hat_mengen = "amazon" in s
+    if hat_mengen:
+        am = s.get("amazon")
+        print("Amazon-Mengen: " + (f"Stand {_zeitpunkt(am.get('stand'))}, Status {am.get('status')}" + (f", Lager {am['lager']}" if am.get("lager") else "") if am else "unbekannt, der Abgleich hat diese Sendung nicht gespeichert"))
     if s.get("positionen"):
         print("Positionen:")
         for p in s["positionen"]:
             kartons = f" · {_n(p['kartons'])} Kartons" if p.get("kartons") is not None else ""
-            print(f"  {p.get('sku')} · {p.get('produkt')} · {_n(p.get('stueck'))} St.{kartons}")
+            mengen = f" · {_mengen_text(p)} · offen {_n(p.get('offen'))}" if hat_mengen else ""
+            hinweis = f" · {p['abweichung']}" if p.get("abweichung") else ""
+            print(f"  {p.get('sku')} · {p.get('produkt')} · {_n(p.get('stueck'))} St.{kartons}{mengen}{hinweis}")
+    for p in s.get("nurBeiAmazon") or []:
+        print(f"  {p.get('sku')} · {p.get('produkt')} · {_mengen_text(p)} · nur bei Amazon, nicht in der Einsendung")
     _stand(res)
 
 
