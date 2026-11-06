@@ -2,9 +2,9 @@
 
 ## 0.15.0 (06.11.2026)
 
-- `sendung <IN-Nummer oder FBA-ID>` zeigt je Position versandt, eingebucht und offen samt Stand der Amazon-Daten. Fehlende Mengen stehen als „unbekannt“, nie als 0. `offen` bleibt der Zulauf des Tools.
+- `sendung <IN-Nummer oder FBA-ID>` zeigt je Position versandt, eingebucht, offen und den Zustand („noch unterwegs“, „zugestellt“, „wird gerade eingebucht“, „abgeschlossen“) samt Stand der Amazon-Daten. Fehlende Mengen stehen als „unbekannt“, nie als 0. `offen` ist hier Amazons Rest (versandt minus eingebucht). Die Zulauf-Schätzung des Tools heißt im JSON `sendinOpenUnits` und erscheint in dieser Ausgabe nicht.
 - `sendung <FBA-ID>` einer Direktlieferung ohne Einsendung nennt die Bestellung und, soweit gespeichert, die Mengen.
-- Neu: `sendungen --abweichung` (Standard `--status alle`, `--limit 200`): Sendungen, bei denen Tool und Amazon auseinanderliegen; am Ende, wie viele wegen unbekannter Mengen nicht geprüft sind. Was eine Abweichung ist, entscheidet das Tool.
+- Neu: `sendungen --abweichung` (Standard `--status alle`, `--limit 200`): Sendungen, bei denen Tool und Amazon auseinanderliegen. Eine Abweichung gibt es erst ab Zustellung, ein Rest zählt erst bei CLOSED. Am Ende, wie viele wegen unbekannter Mengen nicht geprüft sind. Was eine Abweichung ist, entscheidet das Tool.
 - Prüfskript `tests/pruefe-sendung-mengen.py`.
 - Braucht das Tool mit `src/lib/amazon-mengen.ts` (company-interface, Branch `feat/sendung-mengen`). Mit einem älteren Tool bleibt `sendung` wie bisher, `sendungen --abweichung` sagt „gibt es im Tool noch nicht“.
 

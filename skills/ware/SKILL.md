@@ -88,6 +88,6 @@ Was nicht geht, und was dann zu tun ist:
 
 - „… ist nicht eindeutig. Möglich: …“: die passende Nummer aus der Liste wählen, wenn die Frage es eindeutig macht, sonst nachfragen.
 - „Nicht geändert: …“ (bei `bestellung-eta`): die Meldung des Tools wörtlich weitergeben, nicht anders versuchen. „Bitte kurz begründen …“: die Person nach einem Satz Grund fragen. „noch nicht freigeschaltet“ oder „gibt es im Tool noch nicht“: im Tool eintragen lassen.
-- Amazon-Mengen: „unbekannt“ heißt nicht gespeichert, nie 0 lesen. Der Abgleich führt sie seit 03.11. für Sendungen, die Amazon seitdem geändert hat. Eine Direktlieferung hat keine Einsendung: `sendung <FBA-ID>` nennt die Bestellung. `offen` ist der Zulauf des Tools und kann von versandt minus eingebucht abweichen.
+- Amazon-Mengen: „unbekannt“ heißt nicht gespeichert, nie 0 lesen. Der Abgleich führt sie seit 03.11. für Sendungen, die Amazon seitdem geändert hat. Eine Direktlieferung hat keine Einsendung: `sendung <FBA-ID>` nennt die Bestellung. `offen` ist in `sendung` Amazons Rest (versandt minus eingebucht). „noch unterwegs“, „zugestellt“ und „wird gerade eingebucht“ sind kein Grund zur Reklamation; eine Abweichung steht ausdrücklich dabei.
 - „… gibt es nicht“: mit `bestellungen --status alle --suche <Teil>` oder `sendungen --status alle --suche <Teil>` suchen.
 - „Kein Schlüssel“ oder 401: `/wiki-setup` nennen. „Für diesen Bereich hast du keinen Zugang“: so weitergeben.

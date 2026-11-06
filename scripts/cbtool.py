@@ -1380,15 +1380,25 @@ def _mengen_text(p: dict) -> str:
     return f"versandt {_menge_text(p.get('versandt'))} · eingebucht {_menge_text(p.get('eingebucht'))}"
 
 
+def _amazon_text(p: dict) -> str:
+    """`offen` ist hier Amazons Rest (versandt − eingebucht). Die Zulauf-Schätzung des Tools (sendinOpenUnits) zeigt dieser Befehl nicht."""
+    return _mengen_text(p) + f" · offen {_menge_text(p.get('offen'))}" + (f" · {p['zustand']}" if p.get("zustand") else "") + (f" · {p['abweichung']}" if p.get("abweichung") else "")
+
+
+MENGEN_AUSFALL = "Amazon-Mengen konnten gerade nicht geladen werden: die Zahlen sind unbekannt, nichts daraus schließen."
+
+
 def _abweichungen(liste: list, ohne: list, res: dict) -> None:
     """Abweichungen je Position; das Tool entscheidet, was eine ist (positionMengen), hier wird nichts gerechnet."""
-    if not liste and not ohne:
+    if res.get("mengenNichtGeladen"):
+        print(MENGEN_AUSFALL)
+    elif not liste and not ohne:
         print("Keine Abweichung zwischen Tool und Amazon erkannt.")
     for s in liste:
         print(f"{s.get('nr')} · {s.get('amazonId') or 'ohne Amazon-ID'} · {s.get('status')}" + (f" · Amazon {s['amazon'].get('status')}, Stand {_zeitpunkt(s['amazon'].get('stand'))}" if s.get("amazon") else ""))
         for p in s.get("positionen") or []:
             if p.get("abweichung"):
-                print(f"  {p.get('sku')} · {_mengen_text(p)} · {p['abweichung']}")
+                print(f"  {p.get('sku')} · {_amazon_text(p)}")
         for p in s.get("nurBeiAmazon") or []:
             print(f"  {p.get('sku')} · {_mengen_text(p)} · nur bei Amazon, nicht in der Einsendung")
     for a in ohne:
@@ -1396,7 +1406,7 @@ def _abweichungen(liste: list, ohne: list, res: dict) -> None:
         print(f"{kopf} · Amazon {a.get('amazonStatus')}, Stand {_zeitpunkt(a.get('stand'))}")
         for p in a.get("positionen") or []:
             if p.get("abweichung"):
-                print(f"  {p.get('sku')} · {_mengen_text(p)} · {p['abweichung']}")
+                print(f"  {p.get('sku')} · {_amazon_text(p)}")
     if res.get("gekuerzt") or res.get("ohneEinsendungGekuerzt"):
         print("Gekürzt: mit --suche eingrenzen.")
     if res.get("mengenUnbekannt"):
@@ -1443,9 +1453,14 @@ def cmd_sendung(args: list[str]) -> None:
             ("Amazon-Lager", a.get("lager") or "unbekannt"),
             ("Amazon-Mengen, Stand", _zeitpunkt(a.get("stand")) or "unbekannt, der Abgleich hat diese Sendung nicht gespeichert"),
         ))
-        print("Positionen:")
+        if res.get("mengenNichtGeladen"):
+            print(MENGEN_AUSFALL)
+        if a.get("positionen"):
+            print("Positionen:")
+        else:
+            print("Positionen: keine gespeichert, Mengen unbekannt.")
         for p in a.get("positionen") or []:
-            print(f"  {p.get('sku')} · {p.get('produkt')} · {_mengen_text(p)}" + (f" · {p['abweichung']}" if p.get("abweichung") else ""))
+            print(f"  {p.get('sku')} · {p.get('produkt')} · {_amazon_text(p)}")
         _stand(res)
         return
     s = res.get("sendung") or {}
@@ -1464,14 +1479,16 @@ def cmd_sendung(args: list[str]) -> None:
     hat_mengen = "amazon" in s
     if hat_mengen:
         am = s.get("amazon")
-        print("Amazon-Mengen: " + (f"Stand {_zeitpunkt(am.get('stand'))}, Status {am.get('status')}" + (f", Lager {am['lager']}" if am.get("lager") else "") if am else "unbekannt, der Abgleich hat diese Sendung nicht gespeichert"))
+        if res.get("mengenNichtGeladen"):
+            print(MENGEN_AUSFALL)
+        else:
+            print("Amazon-Mengen: " + (f"Stand {_zeitpunkt(am.get('stand'))}, Status {am.get('status')}" + (f", Lager {am['lager']}" if am.get("lager") else "") if am else "unbekannt, der Abgleich hat diese Sendung nicht gespeichert"))
     if s.get("positionen"):
         print("Positionen:")
         for p in s["positionen"]:
             kartons = f" · {_n(p['kartons'])} Kartons" if p.get("kartons") is not None else ""
-            mengen = f" · {_mengen_text(p)} · offen {_n(p.get('offen'))}" if hat_mengen else ""
-            hinweis = f" · {p['abweichung']}" if p.get("abweichung") else ""
-            print(f"  {p.get('sku')} · {p.get('produkt')} · {_n(p.get('stueck'))} St.{kartons}{mengen}{hinweis}")
+            mengen = f" · {_amazon_text(p)}" if hat_mengen else ""
+            print(f"  {p.get('sku')} · {p.get('produkt')} · {_n(p.get('stueck'))} St.{kartons}{mengen}")
     for p in s.get("nurBeiAmazon") or []:
         print(f"  {p.get('sku')} · {p.get('produkt')} · {_mengen_text(p)} · nur bei Amazon, nicht in der Einsendung")
     _stand(res)
