@@ -52,7 +52,7 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
           PO braucht schon einen bestätigten Termin (den ersten trägt man im Tool mit der AB ein).
           cbtool.py bestellung-meilenstein PO-032 --schritt fertig|konfektionierer-eingang|konfektionierer-versand|eingang
                                    --datum YYYY-MM-DD --beleg <satz> (--menge <n> | --position SKU=<n> ...)
-                                   [--standort <code>] [--schluessel <id>] [--ausfuehren]
+                                   [--standort <code>] [--ueberlieferung --notiz <satz>] [--schluessel <id>] [--ausfuehren]
                                    Meilenstein oder Wareneingang melden. Ohne --ausfuehren nur Vorschau (nichts
                                    geschrieben); mit --ausfuehren eintragen, nur nach Ja der Person. Hilfe: --help
           cbtool.py einsendung-status IN-2026-0046 --schritt abgeholt|eingebucht --datum YYYY-MM-DD
@@ -63,6 +63,11 @@ Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit
                                    --beleg <satz> --grund <satz> [--schluessel <id>] [--ausfuehren]
                                    Abholung einer Direktlieferung erfassen (wie „Abholung erfassen“ im Tool). Ohne
                                    --ausfuehren nur Vorschau; mit --ausfuehren eintragen, nur nach Ja. Hilfe: --help
+          cbtool.py einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<n>[@JJJJ-MM-TT] ...
+                                   --beleg <satz> [--schluessel <id>] [--ausfuehren]
+                                   Einsendungs-Auftrag starten, ruft Amazon. Ohne --ausfuehren nur Vorschau; mit
+                                   --ausfuehren starten, nur nach Ja. Hilfe: --help
+          cbtool.py einsendung-stand <id>  Stand, Prüfliste und Klärung eines Auftrags
 
 Journal:  cbtool.py journal [--seit 2d|12h|YYYY-MM-DD] [--von <name>] [--art <art>|fakten]
                           [--ref PO-032|CB-123|IN-…|J-12] [--bereich <b>] [--limit <n>]
@@ -105,7 +110,7 @@ Kasse:    cbtool.py kasse                                    Stand, eigene Meldu
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
 from __future__ import annotations
 
-import json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
+import http.client, json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~/.cb-brain")
@@ -145,6 +150,13 @@ def token() -> str | None:
         return None
 
 
+def _mit_status(text: str, status: int) -> SystemExit:
+    """Abbruch mit dem HTTP-Status daran, für Befehle, die je Status anders antworten müssen."""
+    fehler = SystemExit(text)
+    fehler.status = status
+    return fehler
+
+
 def call(path: str, body=None, method: str = "POST", key: str | None = None, timeout: float = TIMEOUT, via: str = "skill", plain_errors: bool = False, bei_404: str | None = None):
     # plain_errors: Fehlertext des Servers ohne „Tool antwortet …“ und mit der Liste gültiger Namen (Aufgaben-Befehle).
     # bei_404: eigener Text, wenn es die Route im Tool noch nicht gibt (Kasse vor dem Live-Gang).
@@ -180,14 +192,14 @@ def call(path: str, body=None, method: str = "POST", key: str | None = None, tim
         except Exception:
             pass
         if e.code == 401:
-            raise SystemExit("Schlüssel wird nicht angenommen (401). Im Tool unter Wiki › Verbinden prüfen oder neu erzeugen.")
+            raise _mit_status("Schlüssel wird nicht angenommen (401). Im Tool unter Wiki › Verbinden prüfen oder neu erzeugen.", 401)
         if e.code == 404 and bei_404:
             raise SystemExit(bei_404)
         if plain_errors:
             if namen and "Möglich:" not in msg:  # nicht doppelt, falls der Server die Namen schon nennt
                 msg = (msg.rstrip() + (" " if msg.rstrip().endswith(".") else ". ") if msg else "") + "Möglich: " + ", ".join(namen)
-            raise SystemExit(msg or f"Tool antwortet {e.code}.")
-        raise SystemExit(f"Tool antwortet {e.code}: {msg}")
+            raise _mit_status(msg or f"Tool antwortet {e.code}.", e.code)
+        raise _mit_status(f"Tool antwortet {e.code}: {msg}", e.code)
     except urllib.error.URLError as e:
         raise SystemExit(f"Tool nicht erreichbar ({tool_url()}): {e.reason}")
 
@@ -999,7 +1011,7 @@ MEILENSTEIN_HILFE = """bestellung-meilenstein: Meilenstein oder Wareneingang ein
 
   cbtool.py bestellung-meilenstein <PO> --schritt <schritt> --datum YYYY-MM-DD --beleg "<satz>"
                                    (--menge <n> | --position SKU=<n> [--position SKU=<n> ...])
-                                   [--standort <code>] [--schluessel <id>] [--ausfuehren]
+                                   [--standort <code>] [--ueberlieferung --notiz "<satz>"] [--schluessel <id>] [--ausfuehren]
 
   --schritt     fertig (Produktion fertig), konfektionierer-eingang, konfektionierer-versand (nur mit
                 Konfektionierer), eingang (Im Lager angekommen, bucht Bestand wie im Tool)
@@ -1008,13 +1020,17 @@ MEILENSTEIN_HILFE = """bestellung-meilenstein: Meilenstein oder Wareneingang ein
   --position    Eingang mit mehreren Positionen, je SKU einmal, z. B. --position 2-M-TK-120=1806
   --standort    nur Eingang: Lager-Code, wenn das Ziel der Bestellung nicht passt (Direkt-FBA: entfällt)
   --beleg       Pflicht, 10 bis 500 Zeichen: woher die Information kommt, mit Link (Mail, Lieferschein, Tracking)
+  --ueberlieferung  nur Eingang, nur Personen: Menge darf über offen liegen, auch an einer angelieferten Bestellung.
+                Bots lehnt das Tool ab.
+  --notiz       Pflicht mit --ueberlieferung, 10 bis 500 Zeichen: warum kam mehr als bestellt
   --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus dem Inhalt gebildet. Derselbe Befehl zweimal bucht
                 nie doppelt.
   --ausfuehren  eintragen. Ohne nur Vorschau: das Tool rechnet die Buchung durch und schreibt nichts.
 
-Überlieferung, Nachträge an angelieferten Bestellungen und Stornos gehen nur im Tool."""
+Nachträge an angelieferten Bestellungen und Stornos gehen nur im Tool."""
 MEILENSTEIN_SCHRITTE = ("fertig", "konfektionierer-eingang", "konfektionierer-versand", "eingang")
 BELEG_MIN, BELEG_MAX = 10, 500  # wie im Tool (src/lib/schritt-schluessel.ts)
+NOTIZ_MIN, NOTIZ_MAX = 10, 500  # wie im Tool (src/lib/schritt-schluessel.ts)
 JA_NEIN = {True: "ja", False: "nein"}
 
 
@@ -1041,6 +1057,8 @@ def cmd_bestellung_meilenstein(args: list[str]) -> None:
         print(MEILENSTEIN_HILFE)
         return
     ausfuehren = _schalter(args, "--ausfuehren")
+    ueberlieferung = _schalter(args, "--ueberlieferung")
+    notiz_roh = _wert(args, "--notiz")
     schritt = _wert(args, "--schritt")
     datum = _wert(args, "--datum")
     menge_roh = _wert(args, "--menge")
@@ -1082,6 +1100,16 @@ def cmd_bestellung_meilenstein(args: list[str]) -> None:
             _falsch("--position und --standort gibt es nur bei --schritt eingang.")
         if menge is None:
             _falsch("Diese Station braucht --menge (Stück, wie im Tool).")
+    notiz = re.sub(r"\s*[\r\n]+\s*", " ", notiz_roh or "").strip()
+    if ueberlieferung:
+        if schritt != "eingang":
+            _falsch("--ueberlieferung und --notiz gibt es nur bei --schritt eingang.")
+        if len(notiz) < NOTIZ_MIN:
+            _falsch(f"--notiz fehlt oder ist zu kurz: warum kam mehr als bestellt ({NOTIZ_MIN} bis {NOTIZ_MAX} Zeichen)?")
+        if len(notiz) > NOTIZ_MAX:
+            _falsch(f"--notiz darf höchstens {NOTIZ_MAX} Zeichen lang sein.")
+    elif notiz_roh is not None:
+        _falsch("--notiz gibt es nur zusammen mit --ueberlieferung.")
     if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
         _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
     body = {"schritt": schritt, "datum": datum, "beleg": beleg}
@@ -1091,6 +1119,11 @@ def cmd_bestellung_meilenstein(args: list[str]) -> None:
         body["positionen"] = positionen
     if standort is not None:
         body["standort"] = standort.strip()
+    # Beide nur, wenn gesetzt: So bleiben Body und Schlüssel einer normalen Meldung wie bisher, und die Überlieferung geht
+    # über **body in den Hash des Schlüssels ein.
+    if ueberlieferung:
+        body["ueberlieferung"] = True
+        body["notiz"] = notiz
     def senden(b: dict) -> dict:
         try:
             return call(f"{LESEN}/bestellungen/{nr}/schritt", b, method="POST", timeout=TIMEOUT_LESEN, plain_errors=True)
@@ -1357,8 +1390,19 @@ def cmd_sendung_abholen(args: list[str]) -> None:
 
 # ---- Sendungen
 
+def _lage_text(s: dict) -> str | None:
+    """Wo die Ware ist, rechnet das Tool. Älteres Tool ohne das Feld: None, dann bleibt die Ausgabe wie vorher. lage null: Amazon-Daten fehlen."""
+    if "lage" not in s:
+        return None
+    if s["lage"] is None:
+        return "Lage unbekannt, Amazon-Daten nicht geladen"
+    return "Lage " + s["lage"] + (f" seit {_zeitpunkt(s['seit'])}" if s.get("seit") else "") + (f" ({s['widerspruch']})" if s.get("widerspruch") else "")
+
+
 def _sendung_zeile(s: dict) -> str:
     teile = [s.get("nr") or "?", s.get("amazonId") or "ohne Amazon-ID", s.get("status") or "?"]
+    if _lage_text(s):
+        teile.append(_lage_text(s))
     if s.get("von"):
         teile.append(f"von {s['von']}")
     teile.append(f"ETA {_datum_text(s['eta'])}" if s.get("eta") else "ohne ETA")
@@ -1450,6 +1494,8 @@ def cmd_sendung(args: list[str]) -> None:
     a = res.get("ohneEinsendung")
     if a:
         print(f"{a.get('amazonId')} · keine Einsendung im Tool ({a.get('art')})")
+        if _lage_text(a):
+            print(_lage_text(a))
         _felder((
             ("Bestellungen", ", ".join(a.get("bestellungen") or []) or "keine trägt diese Amazon-ID"),
             ("Amazon-Status", a.get("amazonStatus") or "unbekannt"),
@@ -1468,6 +1514,8 @@ def cmd_sendung(args: list[str]) -> None:
         return
     s = res.get("sendung") or {}
     print(f"{s.get('nr')} · {s.get('status')}")
+    if _lage_text(s):
+        print(_lage_text(s))
     _felder((
         ("Amazon-Shipment-ID", s.get("amazonId") or "noch keine"),
         ("Gruppe", s.get("gruppe")),
@@ -1527,6 +1575,21 @@ def _bestand_einzeln(b: dict) -> None:
     for a in (b.get("unterwegs") or {}).get("anlieferungen") or []:
         spaet = f" (+{a['ueberfaelligTage']} T überfällig)" if a.get("ueberfaelligTage") else ""
         print(f"    unterwegs: {a.get('ref')} · {a.get('art')} · {_n(a.get('stueck'))} St. · ETA {_datum_text(a.get('eta')) or '–'}{spaet}")
+    # Älteres Tool ohne die Felder: keine Zeile. nachLage teilt die Sendungen in „unterwegs“ auf. ohneEinsendung steht nicht in nachLage;
+    # Art bestellung und Direktlieferungen können in „unterwegs“ stecken, nicht addieren.
+    if "nachLage" in b:
+        if b["nachLage"] is None:
+            print("    Einsendungen nach Lage: unbekannt, die Amazon-Daten konnten gerade nicht geladen werden")
+        else:
+            teile = ", ".join(f"{stufe} {_n(stueck)}" for stufe, stueck in b["nachLage"].items())
+            print(f"    Einsendungen nach Lage: {teile or 'nichts offen'}")
+    if "ohneEinsendung" in b:
+        if b["ohneEinsendung"] is None:
+            print("    ohne Einsendung: unbekannt, die Amazon-Daten konnten gerade nicht geladen werden")
+        for z in b["ohneEinsendung"] or []:
+            print(f"    ohne Einsendung: {z.get('amazonId')} · {z.get('art')} · {_lage_text(z) or 'Lage unbekannt'} · {_mengen_text(z)} · offen {_menge_text(z.get('offen'))}")
+        if b["ohneEinsendung"]:
+            print("    ohne Einsendung steht nicht in der Lage-Aufteilung; Art bestellung und Direktlieferungen können in „unterwegs“ stecken, nicht addieren")
     print(f"    Link: {b.get('link')}")
 
 
@@ -1834,12 +1897,173 @@ def cmd_absatz(args: list[str]) -> None:
     _stand(res)
 
 
+# ---------------------------------------------------------------- Einsendung starten (Tür einsendung_starten, 06.11.2026)
+
+EINSENDUNG_START_HILFE = """einsendung-starten: Einsendungs-Auftrag im Tool starten, derselbe Ablauf wie im Dialog (Tool-Tür einsendung_starten).
+
+  cbtool.py einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<einheiten>[@JJJJ-MM-TT] [--position ...]
+                               --beleg "<satz>" [--schluessel <id>] [--ausfuehren]
+
+  --lager       Lager-Code wie im Tool
+  --bereit-ab   ab wann die Ware versandbereit ist
+  --position    SKU wörtlich und Einheiten; @Datum ist das MHD, wo das Tool es verlangt
+  --beleg       Pflicht, 10 bis 500 Zeichen: woher der Auftrag kommt, mit Link
+  --schluessel  eigener Idempotenz-Schlüssel; ohne wird er aus Inhalt und Tag gebildet. Derselbe Befehl am selben Tag
+                startet nie zweimal.
+  --ausfuehren  starten, nur nach Ja der Person. Ohne nur Vorschau: das Tool prüft den Antrag, ruft Amazon nicht und schreibt nichts.
+
+Der Start ruft Amazon. Transport und kostenpflichtige Lager bestätigt eine Person im Tool, die Mail bleibt ein Entwurf.
+Ob ein Konto starten darf, entscheidet das Tool: Heute ist die Tür für alle geschlossen (403), Personen arbeiten im Dialog.
+Den Stand zeigt einsendung-stand <id>."""
+EINSENDUNG_TUER = "/einsendungen/auftrag"
+TIMEOUT_START = 65.0  # Die Route darf 60 s laufen. Bricht die Verbindung ab, startet derselbe Befehl nicht neu (Schlüssel).
+EINSENDUNG_FEHLT = "Einsendungen über den Schlüssel starten gibt es im Tool noch nicht. Bitte im Tool anlegen."
+AUSGANG_UNKLAR = "Ausgang unklar, nicht neu starten"
+NICHT_ANGEKOMMEN = (401, 403, 404, 422, 423)  # Das Tool hat beim Ausführen sicher nichts gestartet.
+
+
+def _einsendung_positionen(args: list[str]) -> list[dict]:
+    positionen = []
+    while "--position" in args:
+        p = _wert(args, "--position")
+        m = re.match(r"^\s*([A-Za-z0-9._-]+)\s*=\s*(\d+)\s*(?:@\s*(\d{4}-\d{2}-\d{2})\s*)?$", p or "")
+        if not m or int(m.group(2)) <= 0:
+            _falsch(f"--position erwartet SKU=Menge oder SKU=Menge@JJJJ-MM-TT, z. B. SKU-TEST-1=120, nicht „{p}“.")
+        pos = {"sku": m.group(1), "einheiten": int(m.group(2))}
+        if m.group(3):
+            _tag_param(m.group(3), "--position")
+            pos["mhd"] = m.group(3)
+        positionen.append(pos)
+    skus = [p["sku"].lower() for p in positionen]
+    if not skus:
+        _falsch("einsendung-starten braucht mindestens eine --position SKU=<einheiten>.")
+    if len(set(skus)) != len(skus):
+        _falsch("Jede SKU darf nur einmal in --position stehen.")
+    return sorted(positionen, key=lambda p: p["sku"])
+
+
+def _einsendung_auftrag(a: dict) -> None:
+    """Stand eines Auftrags, gleich für einsendung-starten und einsendung-stand."""
+    for p in a.get("positionen") or []:
+        print(f"  {p.get('sku')}: {p.get('einheiten')} Einheiten, {p.get('kartons')} Kartons")
+    print(f"Lager: {a.get('lager')} · {a.get('versandart')} · Schritt {a.get('schritt')}")
+    print(f"Stand: {a.get('stand')}")
+    if a.get("braucht_person"):
+        print("Eine Person ist dran: im Tool unter Bewegungen die Karte der Einsendung öffnen. Bots bestätigen und brechen nicht ab.")
+    if a.get("frist"):
+        print(f"Frist: {a['frist']}")
+    if a.get("klaerung"):
+        print(f"Klärung: {a['klaerung']}")
+    for x in a.get("abweichung") or []:
+        print(f"Abweichung: {x}")
+    if a.get("pruefliste"):
+        print("Prüfliste:")
+        for z in a["pruefliste"]:
+            urteil = "nicht prüfbar" if z.get("passt") is None else ("passt" if z.get("passt") else "passt NICHT")
+            print(f"  {z.get('feld')}: Tool {z.get('tool')}, Amazon {z.get('amazon') if z.get('amazon') is not None else 'unbekannt'} · {urteil}")
+        if a.get("pruefliste_nur_im_tool"):
+            print(f"  Dazu {a['pruefliste_nur_im_tool']} Zeilen nur im Tool (etwa Kosten).")
+    for s in a.get("sendungen") or []:
+        if s.get("fba_id"):
+            print(f"Sendung: {s['fba_id']}" + (f" · {s['transporteur']}" if s.get("transporteur") else ""))
+
+
+def cmd_einsendung_starten(args: list[str]) -> None:
+    """Einsendung starten (POST /einsendungen/auftrag). Standard: Vorschau; --ausfuehren startet."""
+    if "--help" in args or "-h" in args:
+        print(EINSENDUNG_START_HILFE)
+        return
+    ausfuehren = _schalter(args, "--ausfuehren")
+    lager = _wert(args, "--lager")
+    bereit = _wert(args, "--bereit-ab")
+    beleg_roh = _wert(args, "--beleg")
+    schluessel = _wert(args, "--schluessel")
+    positionen = _einsendung_positionen(args)
+    if args:
+        _falsch(f"Unbekannt: {' '.join(args)}")
+    if not lager or not lager.strip():
+        _falsch("einsendung-starten braucht --lager <code>.")
+    if bereit is None:
+        _falsch("einsendung-starten braucht --bereit-ab YYYY-MM-DD.")
+    _tag_param(bereit, "--bereit-ab")
+    beleg = _beleg(beleg_roh)
+    if schluessel is not None and not re.match(r"^[A-Za-z0-9._:-]{8,100}$", schluessel):
+        _falsch("--schluessel: 8 bis 100 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Doppelpunkt, Bindestrich.")
+    body = {"antrag": {"lagerCode": lager.strip(), "bereitAb": bereit, "positionen": positionen}, "beleg": beleg}
+
+    def senden(b: dict) -> dict:
+        vorschau = b.get("vorschau") is True
+        try:
+            return call(f"{LESEN}{EINSENDUNG_TUER}", b, method="POST", timeout=TIMEOUT_START, plain_errors=True)
+        except SystemExit as e:
+            text = str(e.code)
+            status = getattr(e, "status", None)
+            if text == "Tool antwortet 404." and status == 404:  # Route fehlt (älteres Tool)
+                raise SystemExit(EINSENDUNG_FEHLT)
+            if vorschau or status in NICHT_ANGEKOMMEN:
+                raise SystemExit(f"Nicht gestartet: {text}")
+            # 5xx, 409, nicht erreichbar: Der Start kann gelaufen sein.
+            raise SystemExit(text if text.startswith(AUSGANG_UNKLAR) else f"{AUSGANG_UNKLAR}: {text}")
+        except (OSError, http.client.HTTPException) as e:  # Lese-Timeout, Verbindung abgerissen
+            if vorschau:
+                raise SystemExit(f"Nicht gestartet: Das Tool antwortet nicht ({e}).")
+            raise SystemExit(f"{AUSGANG_UNKLAR}: Das Tool antwortet nicht ({e}). Mit demselben Befehl den Stand erfragen oder im Tool prüfen.")
+
+    v = senden({**body, "vorschau": True}).get("aenderung") or {}
+    if not ausfuehren or not v.get("anlegbar"):
+        print(f"Vorschau, nichts gestartet: {v.get('lager')} · {v.get('versandart') or 'Versandart offen'}")
+        for p in v.get("positionen") or []:
+            print(f"  {p.get('sku')}: {p.get('einheiten')} Einheiten" + (f", {p['kartons']} Kartons" if p.get("kartons") is not None else ""))
+        for b in v.get("befunde") or []:
+            print(f"Befund: {b.get('text')}")
+        for b in v.get("hinweise") or []:
+            print(f"Hinweis: {b.get('text')}")
+        print(f"Beleg: {v.get('beleg')}")
+        if v.get("anlegbar"):
+            print("Zum Starten denselben Befehl mit --ausfuehren aufrufen, nur nach Ja der Person. Der Start ruft Amazon.")
+        elif ausfuehren:
+            raise SystemExit("Nicht gestartet: Das Tool kann den Antrag so nicht anlegen (Befunde oben).")
+        return
+    key = schluessel or _idempotenz({"tuer": "einsendung_starten", "tag": _heute_berlin(), **body})
+    a = senden({**body, "idempotenz_schluessel": key, "vorschau": False}).get("aenderung") or {}
+    ids = a.get("auftrag_ids") or [a.get("auftrag_id")]
+    if a.get("wiederholt"):
+        print(f"Schon gestartet: Auftrag {', '.join(ids)}. Nichts neu geschrieben.")
+    elif a.get("teilfehler"):
+        print(f"Teilweise gestartet: Auftrag {', '.join(ids)}")
+    else:
+        print(f"Gestartet: Auftrag {', '.join(ids)}")
+    if a.get("teilfehler"):
+        print(f"Nicht alles lief ({AUSGANG_UNKLAR}): {a['teilfehler']}")
+    if a.get("auftrag"):
+        _einsendung_auftrag(a["auftrag"])
+    print(f"Beleg: {a.get('beleg')}")
+    for i in ids:
+        print(f"Weiter: einsendung-stand {i}")
+
+
+def cmd_einsendung_stand(args: list[str]) -> None:
+    """Stand, Prüfliste und Klärung eines Auftrags (GET /einsendungen/auftrag/<id>). Nur lesen."""
+    nr = _ref(args, "einsendung-stand", "die Auftrags-ID aus einsendung-starten")
+    try:
+        res = call(f"{LESEN}{EINSENDUNG_TUER}/{nr}", method="GET", timeout=TIMEOUT_LESEN, plain_errors=True)
+    except SystemExit as e:
+        raise SystemExit(EINSENDUNG_FEHLT if str(e.code) == "Tool antwortet 404." else str(e.code))
+    except (OSError, http.client.HTTPException) as e:  # Lese-Timeout, Verbindung abgerissen
+        raise SystemExit(f"Das Tool antwortet nicht ({e}). Gleich noch einmal versuchen.")
+    a = res.get("auftrag") or {}
+    print(f"Auftrag {a.get('id')}")
+    _einsendung_auftrag(a)
+
+
 WARE = {
     "bestellungen": cmd_bestellungen,
     "bestellung": cmd_bestellung,
     "bestellung-eta": cmd_bestellung_eta,
     "bestellung-meilenstein": cmd_bestellung_meilenstein,
     "einsendung-status": cmd_einsendung_status,
+    "einsendung-starten": cmd_einsendung_starten,
+    "einsendung-stand": cmd_einsendung_stand,
     "sendung-abholen": cmd_sendung_abholen,
     "sendungen": cmd_sendungen,
     "sendung": cmd_sendung,
