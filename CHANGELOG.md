@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0 (06.11.2026)
+
+- Neu: `faelle`: Reklamationsfälle ab Stufe `pruefen` mit Rest, Saldo, Vorschlag und bestehender Arbeit, dazu die Zahl der Fälle, die noch zählen, und ungeprüfte Positionen (Mengen unbekannt, nie Rest 0).
+- Neu: `fall <FBA-ID> <sku>`: eine Position mit Nachbarn im Saldo, Tagen und Frist (Annahme, warnt nur), oder der Grund, warum es kein Fall ist.
+- Nur lesen: Eingereicht wird nichts, entscheiden tut ein Mensch.
+- Prüfskript `tests/pruefe-faelle.py`.
+- Braucht das Tool mit `/api/brain-read/faelle` (company-interface, Branch `feat/reklamationsfaelle`). Mit einem älteren Tool sagen beide Befehle „gibt es im Tool noch nicht“.
 ## 0.19.0 (06.11.2026)
 
 - Neu: `einsendung-starten --lager <code> --bereit-ab YYYY-MM-DD --position SKU=<n>[@JJJJ-MM-TT] --beleg "<satz>"`: startet einen Einsendungs-Auftrag im selben Ablauf wie der Dialog des Tools. Ohne `--ausfuehren` nur Vorschau (kein Aufruf bei Amazon, nichts geschrieben). Der Schlüssel kommt aus Inhalt und Tag, `--schluessel` setzt einen eigenen. Transport und kostenpflichtige Lager bestätigt weiter eine Person im Tool, die Mail bleibt ein Entwurf.

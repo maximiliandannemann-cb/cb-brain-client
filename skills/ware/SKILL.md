@@ -18,6 +18,8 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Wo liegen Tool und Amazon auseinander? | `sendungen --abweichung`, `--status offen`, `--suche <Teil>` |
 | Wie viel liegt wo? | `bestand --suche <SKU oder Name>` (ohne Suche alle Produkte) |
 | Woher kommt der Bestand? Stimmt die Zahl? | `bestand-herkunft <SKU>` (SKU wörtlich): alle Bewegungen je Lager mit Saldo und Beleg, ohne Zeitgrenze, und ob die Endsumme gleich dem Lagerbestand ist |
+| Was sollten wir bei Amazon reklamieren? | `faelle`: Fälle ab Stufe `pruefen` mit Rest, Saldo, Vorschlag und bestehender Arbeit. Stufen sind Rat, nur ein Mensch reicht ein: `pruefen`, `gedeckt` (Saldo gleicht aus), `einreichen`. Unter „Ungeprüft“ sind die Mengen unbekannt, das heißt nicht Rest 0. Bestehende Arbeit nennen, keine neue Aufgabe vorschlagen |
+| Ein Fall im Einzelnen | `fall <FBA-ID> <SKU>` (beide wörtlich): Nachbarn im Saldo, Tage, Frist (Annahme, warnt nur) oder der Grund, warum es kein Fall ist |
 | Wann muss die nächste Bestellung raus? | `bestellplanung`, `--status faellig` (nächste 4 Wochen) oder `ueberfaellig`, `--marktplatz DE\|US`, `--suche` |
 | Wie lief Produkt X? | `absatz --suche <SKU oder Name>`, Zeitraum `--von/--bis YYYY-MM-DD` (Standard 30 Tage bis gestern, höchstens 400), `--kanal amazon\|shop`, `--je tag\|woche` für den Verlauf |
 
