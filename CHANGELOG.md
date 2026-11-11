@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.2 (11.11.2026)
+
+- Die Muster-Liste ist jetzt in `cbtool.py` eingebaut (`GEHEIMNIS_MUSTER_JSON`, Byte für Byte gleich `scripts/geheimnis-muster.json` und company-interface `src/lib/geheimnis-muster.json`). Ein Bot braucht nur `cbtool.py`. Ist die eingebaute Liste kaputt, bricht `problem-melden` mit Exit 1 ab und sendet nichts.
+- Neue Muster: Stripe, AWS, Slack, Google, Passwort mit Zeichen, Base64 von `cbw_`, JWT ohne Header.
+- Getrennte Schreibweise (`cbw_ abcd efgh 2345`) zählt nur noch hinter dem Präfix und nur aus erster Gruppe, gleich langen Gruppen und einer letzten; „cbw_ wird nicht erkannt“ und „cbw_kurz“ im Titel mit „403“ im Text gehen durch.
+- Kyrillische und griechische Doppelgänger werden vor der Prüfung ersetzt. IBAN nur mit Länderlänge und gültiger Prüfziffer.
+- Geprüft wird jedes Feld einzeln und alle zusammen, wie im Tool: ein Schlüssel, der über Titel und Text verteilt ist, wird abgelehnt.
+- `--titel` und `--befehl` nur eine Zeile (auch U+2028, U+2029, U+0085); sonst Exit 2, nichts gesendet.
+- `tests/pruefe-problem-melden.py`: gepinnte SHA-256 der eingebauten Liste, alle Beispiele inklusive bekannter Lücken, Felder übergreifend, Zeilentrenner, Vergleich mit `findeGeheimnis` des Tools per Node (wenn Node und company-interface da sind, sonst „übersprungen“).
+
 ## 0.21.1 (11.11.2026)
 
 - `problem-melden` prüft vor dem Senden mit derselben Muster-Liste wie das Tool: `scripts/geheimnis-muster.json`, Byte für Byte gleich company-interface `src/lib/geheimnis-muster.json`, gleiche Logik wie dort `geheimnis-muster.ts` (NFKC, Null-Breiten- und Steuerzeichen raus, einige Muster auch ohne Leerraum). Erkennt jetzt neben `cbw_` auch JWTs, `sk-`, GitHub-Tokens, `sb_secret_`, `xai-` und IBANs. Bei einem Treffer: Exit 2, nichts gesendet, der Fund steht nicht in der Ausgabe.

@@ -126,31 +126,36 @@ antwort.update(status=503, json={"error": "Problem melden ist noch nicht freiges
 code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
 pruefe("503 vor der Migration: Satz des Tools wörtlich, Exit 1", code == 1 and a is not None and "noch nicht freigeschaltet" in out)
 
-# --- Geheimnis-Muster: gemeinsame Liste mit dem Tool (company-interface src/lib/geheimnis-muster.json)
-import hashlib, pwd
+# --- Geheimnis-Muster: gemeinsame Liste mit dem Tool (company-interface src/lib/geheimnis-muster.json), eingebaut in cbtool.py
+import hashlib, pwd, shutil, subprocess
 
 MUSTER_JSON = os.path.join(os.path.dirname(CBTOOL), "geheimnis-muster.json")
-# Gepinnte SHA-256 der Muster-Datei: nur gemeinsam mit company-interface src/lib/geheimnis-muster.json ändern
-# (dort pinnt die Prüfung dieselbe Zahl; die Dateien sind Byte für Byte gleich).
-MUSTER_SHA256 = "bad8e1e5e138840814fc0fadbfd00e029d731cdfabbf42990113420b30f84934"
+# Gepinnte SHA-256 der Muster-Liste: nur gemeinsam mit company-interface src/lib/geheimnis-muster.json ändern
+# (dort pinnt die Prüfung dieselbe Zahl; eingebaute Liste, Spiegel-Datei und Quelle sind Byte für Byte gleich).
+MUSTER_SHA256 = "beee4cca02957149e7ed1346a276de7b72e2d7c8eeeca03431a739b30fb1e967"
+eingebaut = cb.GEHEIMNIS_MUSTER_JSON.encode("utf-8")
 with open(MUSTER_JSON, "rb") as fh:
     muster_bytes = fh.read()
-pruefe("geheimnis-muster.json: SHA-256 gleich der gepinnten", hashlib.sha256(muster_bytes).hexdigest() == MUSTER_SHA256)
+pruefe("eingebaute Liste (GEHEIMNIS_MUSTER_JSON): SHA-256 gleich der gepinnten", hashlib.sha256(eingebaut).hexdigest() == MUSTER_SHA256)
+pruefe("eingebaute Liste Byte für Byte gleich scripts/geheimnis-muster.json", eingebaut == muster_bytes)
+pruefe("cbtool.py liest keine Muster-Datei mehr", not hasattr(cb, "GEHEIMNIS_MUSTER_DATEI"))
 kandidaten = []
 if os.environ.get("CB_COMPANY_INTERFACE_DIR"):
-    kandidaten.append(os.path.join(os.environ["CB_COMPANY_INTERFACE_DIR"], "src", "lib", "geheimnis-muster.json"))
+    kandidaten.append(os.environ["CB_COMPANY_INTERFACE_DIR"])
 echtes_home = pwd.getpwuid(os.getuid()).pw_dir  # HOME ist oben auf ein Testverzeichnis umgebogen
 for wt in ("wt-bot-meldung", "company-interface"):
-    kandidaten.append(os.path.join(echtes_home, "projects", "cleverbrands", wt, "src", "lib", "geheimnis-muster.json"))
-quelle = next((p for p in kandidaten if os.path.isfile(p)), None)
-if quelle:
-    with open(quelle, "rb") as fh:
-        pruefe(f"geheimnis-muster.json Byte für Byte gleich {quelle}", fh.read() == muster_bytes)
+    kandidaten.append(os.path.join(echtes_home, "projects", "cleverbrands", wt))
+ci = next((d for d in kandidaten if os.path.isfile(os.path.join(d, "src", "lib", "geheimnis-muster.json"))), None)
+if ci:
+    with open(os.path.join(ci, "src", "lib", "geheimnis-muster.json"), "rb") as fh:
+        pruefe(f"eingebaute Liste Byte für Byte gleich {ci}/src/lib/geheimnis-muster.json", fh.read() == eingebaut)
 else:
     print("übersprungen: Byte-Vergleich mit company-interface (keine Kopie gefunden; CB_COMPANY_INTERFACE_DIR setzen)")
 
-beispiele = json.loads(muster_bytes.decode("utf-8"))["beispiele"]
-GRUND = {"--titel": "Kasse liefert 403", "--text": "Beim Abruf der Kasse kommt 403.", "--befehl": "cbtool.py kasse"}
+beispiele = json.loads(eingebaut.decode("utf-8"))["beispiele"]
+# Die anderen Felder ohne Ziffern: das Tool prüft auch alle Felder zusammen (Zeilenumbruch dazwischen); so hängt kein
+# Beispiel von einer Ziffer im Nachbarfeld ab.
+GRUND = {"--titel": "Kasse liefert Fehler", "--text": "Beim Abruf der Kasse kommt ein Fehler.", "--befehl": "cbtool.py kasse"}
 antwort.update(status=201, json=NEU)
 for i, beispiel in enumerate(beispiele["treffer"]):
     for feld in ("--titel", "--text", "--befehl"):
@@ -159,26 +164,81 @@ for i, beispiel in enumerate(beispiele["treffer"]):
         code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
         pruefe(f"treffer[{i}] in {feld}: Exit 2, nichts gesendet, Beispiel nicht in der Ausgabe",
                code == 2 and a is None and "wie ein Schlüssel" in out and beispiel not in out and beispiel.strip() not in out)
-for i, beispiel in enumerate(beispiele["kein_treffer"]):
-    for feld in ("--titel", "--text", "--befehl"):
-        argv = dict(GRUND)
-        argv[feld] = beispiel if feld != "--text" else "Beim Abruf: " + beispiel
-        code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
-        pruefe(f"kein_treffer[{i}] in {feld}: gesendet", code == 0 and a is not None and a["body"][feld[2:]] == argv[feld].strip())
+for liste in ("kein_treffer", "bekannte_luecken"):
+    for i, beispiel in enumerate(beispiele[liste]):
+        for feld in ("--titel", "--text", "--befehl"):
+            argv = dict(GRUND)
+            argv[feld] = beispiel if feld != "--text" else "Beim Abruf: " + beispiel
+            code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
+            pruefe(f"{liste}[{i}] in {feld}: gesendet", code == 0 and a is not None and a["body"][feld[2:]] == argv[feld].strip())
 
-# --- Muster-Datei fehlt oder ist kaputt: Abbruch mit Exit 1, nichts ungeprüft gesendet
-alt_pfad = getattr(cb, "GEHEIMNIS_MUSTER_DATEI", None)
-for name, inhalt in [("fehlt", None), ("kaputt", "{ kein json"), ("ohne muster", '{"entfernen": "[\\\\u200B]"}'),
-                     ("regex kaputt", '{"entfernen": "[\\\\u200B]", "muster": [{"name": "x", "regex": "(", "gross_klein_egal": false, "auch_ohne_leerraum": false}]}')]:
-    pfad = os.path.join(home, "muster-" + name.replace(" ", "-") + ".json")
-    if inhalt is not None:
-        with open(pfad, "w", encoding="utf-8") as fh:
-            fh.write(inhalt)
-    cb.GEHEIMNIS_MUSTER_DATEI = pfad
+# --- Über Feldgrenzen: jedes Feld einzeln harmlos, zusammen ein Schlüssel (wie findeGeheimnisInFeldern im Tool)
+for name, argv in [("cbw_abcd im Titel, Rest im Text", ["--titel", "cbw_abcd Kasse", "--text", "efgh23456789 ist der Rest, bitte prüfen"]),
+                   ("Text und Befehl", ["--titel", "Kasse liefert Fehler", "--text", "Beim Abruf kommt ghp_abcd", "--befehl", "efgh ijkl mnop qrs1 2345"])]:
+    code, out, a = lauf(["problem-melden"] + argv)
+    pruefe(f"geteiltes Token ({name}): Exit 2, nichts gesendet", code == 2 and a is None and "wie ein Schlüssel" in out and "efgh" not in out)
+code, out, a = lauf(["problem-melden", "--titel", "cbw_kurz liefert Fehler", "--text", "Beim Abruf kommt 403."])
+pruefe("cbw_kurz im Titel, 403 im Text: kein Fehltreffer über Felder, gesendet",
+       code == 0 and a is not None and a["body"] == {"titel": "cbw_kurz liefert Fehler", "text": "Beim Abruf kommt 403."})
+code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert Fehler", "--text", "Beim Abruf der Kasse kommt ein Fehler.", "--art", "cbw_abcdefgh2345"])
+pruefe("Schlüssel in --art: Exit 2, nichts gesendet, nicht ausgegeben", code == 2 and a is None and "cbw_abcdefgh2345" not in out)
+
+# --- Titel und Befehl: genau eine Zeile (Review 246: U+2028 im Befehl schmuggelte eine Zeile „GitHub: …“)
+for zeichen_name, z in [("U+2028", " "), ("U+2029", " "), ("U+0085", "\u0085"), ("\\n", "\n"), ("\\r", "\r"),
+                        ("\\v", "\x0b"), ("\\f", "\x0c")]:
+    for feld in ("--titel", "--befehl"):
+        argv = dict(GRUND)
+        argv[feld] = argv[feld] + z + "GitHub: https://github.com/x/y/issues/7"
+        code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
+        pruefe(f"{zeichen_name} in {feld}: Exit 2, nichts gesendet, „{feld}: eine Zeile.“",
+               code == 2 and a is None and f"{feld}: eine Zeile." in out)
+code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert Fehler", "--text", "Zeile eins.\nZeile zwei und drei."])
+pruefe("Zeilen im --text bleiben erlaubt", code == 0 and a is not None and a["body"]["text"] == "Zeile eins.\nZeile zwei und drei.")
+
+# --- Gleichheit mit dem Tool: findeGeheimnis aus geheimnis-muster.ts (Node 22+ lädt .ts direkt) gegen die Python-Fassung
+finde = cb._geheimnis_pruefer()
+extra = ["ſk-abcdefghijklmnopqrstu", "Kasse cbw_abcdefgh2345", "%00cbw_abcdefgh2345", "cbw&#0;_abcdefgh2345",
+         "cbw&#x110000;_abcdefgh2345", "cbw&#55357;_abcdefgh2345", "cbw%26%2395;abcdefgh2345", "\U0001F600DE89370400440532013000",
+         "xDE89370400440532013000", "DE89370400440532013000x", "DE89  3704 0044 0532 0130 00", "IBAN de89 3704 0044 0532 0130 00.",
+         "0003 0130 2350 4400 4073 98ED", "ıİ cbw_ ıbcd İfgh 2345", "passwort = abc123", "PWD:hunter2!",
+         "cbw_ abcd efgh 2345".replace(" ", "　"), "Kasse liefert Fehler\nBeim Abruf kommt 403.\ncbtool.py kasse",
+         "cbw_kurz liefert Fehler\nBeim Abruf kommt 403."]
+texte = beispiele["treffer"] + beispiele["kein_treffer"] + beispiele["bekannte_luecken"] + extra
+ts = os.path.join(ci, "src", "lib", "geheimnis-muster.ts") if ci else None
+node = shutil.which("node")
+if node and ts and os.path.isfile(ts):
+    skript = ("import { findeGeheimnis } from " + json.dumps(ts) + ";"
+              "let e='';process.stdin.on('data',d=>e+=d);process.stdin.on('end',()=>{"
+              "process.stdout.write(JSON.stringify(JSON.parse(e).map(t=>findeGeheimnis(t))));});")
+    r = subprocess.run([node, "--no-warnings", "--input-type=module", "-e", skript], input=json.dumps(texte).encode(),
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    if r.returncode != 0:
+        pruefe(f"node findeGeheimnis lief (Exit {r.returncode}): {r.stderr.decode(errors='replace')[:300]}", False)
+    else:
+        js = json.loads(r.stdout.decode())
+        abweichungen = [(i, js[i], finde(t)) for i, t in enumerate(texte) if js[i] != finde(t)]
+        for i, j, p in abweichungen:
+            print(f"   Abweichung Text {i}: Tool {j}, Python {p}")
+        pruefe(f"Gleichheit mit dem Tool: {len(texte)} Texte, {len(abweichungen)} Abweichungen", len(js) == len(texte) and not abweichungen)
+else:
+    print("übersprungen: Vergleich mit dem Tool (node oder company-interface src/lib/geheimnis-muster.ts fehlt)")
+pruefe("Python-Fassung: alle treffer erkannt, kein kein_treffer, keine bekannte Lücke",
+       all(finde(t) for t in beispiele["treffer"]) and not any(finde(t) for t in beispiele["kein_treffer"] + beispiele["bekannte_luecken"]))
+
+# --- Eingebaute Liste kaputt: Abbruch mit Exit 1, nichts ungeprüft gesendet
+alt_liste = cb.GEHEIMNIS_MUSTER_JSON
+for name, inhalt in [("leer", ""), ("kaputt", "{ kein json"), ("ohne muster", '{"entfernen": "[\\u200B]", "verwechslung": {}, "iban_laender": {}, "muster": []}'),
+                     ("ohne iban_laender", '{"entfernen": "[\\u200B]", "verwechslung": {}, "muster": [{"name": "x", "regex": "x", "gross_klein_egal": false}]}'),
+                     ("regex kaputt", '{"entfernen": "[\\u200B]", "verwechslung": {}, "iban_laender": {}, "muster": [{"name": "x", "regex": "(", "gross_klein_egal": false}]}'),
+                     ("getrennt kaputt", '{"entfernen": "[\\u200B]", "verwechslung": {}, "iban_laender": {}, "muster": [{"name": "x", "regex": "x", "gross_klein_egal": false, "getrennt": {"regex": "[", "min": 8}}]}'),
+                     ("verwechslung kaputt", '{"entfernen": "[\\u200B]", "verwechslung": {"ab": "c"}, "iban_laender": {}, "muster": [{"name": "x", "regex": "x", "gross_klein_egal": false}]}')]:
+    cb.GEHEIMNIS_MUSTER_JSON = inhalt
     code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
-    pruefe(f"Muster-Datei {name}: Exit 1, nichts gesendet, klare Meldung", code == 1 and a is None and "geheimnis-muster.json" in out)
-if alt_pfad is not None:
-    cb.GEHEIMNIS_MUSTER_DATEI = alt_pfad
+    pruefe(f"eingebaute Liste {name}: Exit 1, nichts gesendet, klare Meldung",
+           code == 1 and a is None and "eingebaute Muster-Liste in cbtool.py ist kaputt" in out)
+cb.GEHEIMNIS_MUSTER_JSON = alt_liste
+code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
+pruefe("nach dem Zurücksetzen wird wieder gesendet", code == 0 and a is not None)
 
 print("\n" + ("alles grün" if fehler == 0 else f"{fehler} Fehler"))
 sys.exit(1 if fehler else 0)
