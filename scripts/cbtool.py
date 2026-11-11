@@ -105,6 +105,14 @@ Kasse:    cbtool.py kasse                                    Stand, eigene Meldu
           cbtool.py kasse-erlassen --fuer <name> --tag YYYY-MM-DD [--bis YYYY-MM-DD] --grund <text>
           Das Tool rechnet und entscheidet, wer was darf (Kassenwart Mats, für Mats' Beträge Max).
           Das Skript liest keine Bilder: Betrag, Datum und Empfänger liest Claude vom Screenshot ab.
+
+Problem:  cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>]
+                          [--art zugang|fehler|funktion]
+          Meldet fehlenden Zugang (401/403 mit Befehl), einen Fehler oder eine fehlende Funktion an das Tool (Seite
+          /feedback). Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10
+          Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt. Hilfe: problem-melden --help
+
+Hilfe:    cbtool.py --help | -h | help                       diese Übersicht
 """
 # macOS bringt ab Werk nur Python 3.9 mit, und `python3` zeigt ohne Homebrew darauf (Issue #1, 18.09.).
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
@@ -2544,6 +2552,67 @@ def cmd_kasse_erlassen(args: list[str]) -> None:
     print(_stand_kurz(z))
 
 
+# ---------------------------------------------------------------- Problem melden (Tool, Auftrag 229, 11.11.2026)
+# Das Tool prüft Länge, Zähler und Dubletten (src/lib/bot-meldung-core.ts). Das Skript lehnt nur vorab ab, was nie
+# gesendet werden darf: etwas, das wie ein Schlüssel aussieht.
+PROBLEM = "/api/brain-read/problem"
+PROBLEM_FEHLT = "problem-melden gibt es im Tool noch nicht (älterer Stand). Bitte Max direkt Bescheid geben."
+SCHLUESSEL_MUSTER = re.compile(r"cbw_[a-z0-9]{8,}", re.IGNORECASE)
+PROBLEM_HILFE = """problem-melden: ein Problem an das Tool melden (Seite /feedback, im Tool eingerichtet auch als GitHub-Issue).
+
+  cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>] [--art zugang|fehler|funktion]
+
+  --titel   5 bis 120 Zeichen, eine Zeile, z. B. „Kasse liefert 403“. Gleicher Titel binnen 24 Stunden wird angehängt.
+  --text    10 bis 2000 Zeichen: was du versucht hast, was kam, was du gebraucht hättest.
+  --befehl  der Befehl, der scheiterte, höchstens 120 Zeichen, z. B. „cbtool.py kasse“.
+  --status  HTTP-Status der Antwort, z. B. 403.
+  --art     zugang (fehlender Zugang), fehler, funktion (fehlt im Tool). Ohne: zugang bei 401 und 403, sonst fehler.
+
+Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt."""
+
+
+def cmd_problem_melden(args: list[str]) -> None:
+    if "--help" in args or "-h" in args:
+        print(PROBLEM_HILFE)
+        return
+    titel = _wert(args, "--titel")
+    text = _wert(args, "--text")
+    befehl = _wert(args, "--befehl")
+    status = _zahl(_wert(args, "--status"), "--status", 100, 599)
+    art = _wert(args, "--art")
+    _rest_leer(args)
+    if not titel or not titel.strip() or not text or not text.strip():
+        _falsch("problem-melden braucht --titel und --text.")
+    if art is not None and art not in ("zugang", "fehler", "funktion"):
+        _falsch(f"--art erwartet zugang, fehler oder funktion, nicht „{art}“.")
+    if any(SCHLUESSEL_MUSTER.search(w) for w in (titel, text, befehl or "")):
+        print("Nicht gesendet: Die Meldung enthält etwas, das wie ein Schlüssel aussieht (cbw_…). Bitte ohne Schlüssel melden.", file=sys.stderr)
+        raise SystemExit(2)
+    body = {"titel": titel.strip(), "text": text.strip()}
+    if befehl is not None and befehl.strip():
+        body["befehl"] = befehl.strip()
+    if status is not None:
+        body["status"] = status
+    if art is not None:
+        body["art"] = art
+    res = call(PROBLEM, body, plain_errors=True, bei_404=PROBLEM_FEHLT)
+    m = res.get("meldung") or {}
+    if m.get("neu"):
+        print(f"Gemeldet (neu): {m.get('titel')}")
+    else:
+        print(f"Angehängt an die bestehende Meldung: {m.get('titel')} (gleiche Meldung binnen 24 Stunden)")
+    print(f"Tool-ID: {m.get('id')}")
+    g = res.get("github") or {}
+    if g.get("uebertragen") and g.get("url"):
+        print(f"GitHub: {g['url']}")
+    elif g.get("status"):
+        print(f"Nur im Tool (Übertragung an GitHub gescheitert, Status {g['status']}).")
+    else:
+        print("Nur im Tool.")
+    if m.get("heuteGemeldet") is not None:
+        print(f"Heute gemeldet: {m['heuteGemeldet']} von {m.get('heuteErlaubt', 10)}.")
+
+
 KASSE_BEFEHLE = {
     "kasse": cmd_kasse,
     "kasse-melden": cmd_kasse_melden,
@@ -3028,7 +3097,7 @@ PROJEKT_BEFEHLE = {
 
 def main(argv: list[str]) -> None:
     global HILFE
-    if len(argv) < 2:
+    if len(argv) < 2 or argv[1] in ("--help", "-h", "help"):
         print(__doc__)
         return
     cmd, args = argv[1], argv[2:]
@@ -3075,6 +3144,9 @@ def main(argv: list[str]) -> None:
     elif cmd in KASSE_BEFEHLE:
         HILFE = "Kasse:"
         KASSE_BEFEHLE[cmd](args)
+    elif cmd == "problem-melden":
+        HILFE = "Problem:"
+        cmd_problem_melden(args)
     else:
         print(__doc__)
         raise SystemExit(2)

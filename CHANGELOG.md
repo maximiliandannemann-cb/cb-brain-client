@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0 (11.11.2026)
+
+- Neu: `problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>] [--art zugang|fehler|funktion]`: meldet fehlenden Zugang, einen Fehler oder eine fehlende Funktion an das Tool (Seite /feedback; ist es im Tool eingerichtet, zusätzlich als GitHub-Issue). Nur Text, keine Schlüssel, Mailinhalte, Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag, gleiche Meldung binnen 24 Stunden wird angehängt. Etwas, das wie ein Schlüssel aussieht (`cbw_…`), lehnt schon das Skript ab, gesendet wird dann nichts.
+- `cbtool.py --help`, `-h` und `help` zeigen die Übersicht mit Exit 0 (bisher Exit 2).
+- Prüfskript `tests/pruefe-problem-melden.py`.
+- Braucht das Tool mit `/api/brain-read/problem` (company-interface, Branch `feat/bot-meldung`). Mit einem älteren Tool sagt der Befehl „gibt es im Tool noch nicht“.
+
 ## 0.20.0 (06.11.2026)
 
 - Neu: `faelle`: Reklamationsfälle ab Stufe `pruefen` mit Rest, Saldo, Vorschlag und bestehender Arbeit, dazu die Zahl der Fälle, die noch zählen, und ungeprüfte Positionen (Mengen unbekannt, nie Rest 0).
