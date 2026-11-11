@@ -105,12 +105,21 @@ Kasse:    cbtool.py kasse                                    Stand, eigene Meldu
           cbtool.py kasse-erlassen --fuer <name> --tag YYYY-MM-DD [--bis YYYY-MM-DD] --grund <text>
           Das Tool rechnet und entscheidet, wer was darf (Kassenwart Mats, für Mats' Beträge Max).
           Das Skript liest keine Bilder: Betrag, Datum und Empfänger liest Claude vom Screenshot ab.
+
+Problem:  cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>]
+                          [--art zugang|fehler|funktion]
+          Meldet fehlenden Zugang (401/403 mit Befehl), einen Fehler oder eine fehlende Funktion an das Tool (Seite
+          /feedback). Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10
+          Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt. Nur Bots mit eigenem Konto; Personen
+          melden im Tool unter /feedback. Hilfe: problem-melden --help
+
+Hilfe:    cbtool.py --help | -h | help                       diese Übersicht
 """
 # macOS bringt ab Werk nur Python 3.9 mit, und `python3` zeigt ohne Homebrew darauf (Issue #1, 18.09.).
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
 from __future__ import annotations
 
-import http.client, json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
+import http.client, json, os, re, stat, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~/.cb-brain")
@@ -2544,6 +2553,542 @@ def cmd_kasse_erlassen(args: list[str]) -> None:
     print(_stand_kurz(z))
 
 
+# ---------------------------------------------------------------- Problem melden (Tool, Auftrag 229, 11.11.2026)
+# Das Tool prüft Länge, Zähler, Dubletten und wer melden darf (nur Bot-Konten; src/lib/bot-meldung-core.ts,
+# konto-rechte.ts). Das Skript lehnt nur vorab ab, was nie gesendet werden darf: etwas, das wie ein Schlüssel, Token
+# oder eine Kontonummer aussieht, und Titel oder Befehl mit mehr als einer Zeile.
+PROBLEM = "/api/brain-read/problem"
+PROBLEM_FEHLT = "problem-melden gibt es im Tool noch nicht (älterer Stand). Bitte Max direkt Bescheid geben."
+GEHEIMNIS_ABGELEHNT = ("Die Meldung enthält etwas, das wie ein Schlüssel, Token oder eine Kontonummer aussieht. "
+                       "Bitte ohne diese Angabe melden. Nichts gesendet.")
+# Zeilentrenner, die in --titel und --befehl nicht vorkommen dürfen (eine Zeile; U+2028 im Befehl konnte sonst eine Zeile
+# „GitHub: …“ in die Ausgabe des Tools schmuggeln, Review 246).
+EINE_ZEILE = re.compile("[\r\n\x0b\x0c\x85\u2028\u2029]")
+
+# Geheimnis-Muster, eingebaut, damit ein Bot nur diese eine Datei braucht. Byte für Byte gleich company-interface
+# src/lib/geheimnis-muster.json und scripts/geheimnis-muster.json (SHA-256 gepinnt in tests/pruefe-problem-melden.py;
+# nur gemeinsam ändern). Die Logik unten ist dieselbe wie dort in geheimnis-muster.ts (findeGeheimnis,
+# findeGeheimnisInFeldern); jede Änderung dort hier mitziehen.
+GEHEIMNIS_MUSTER_JSON = r'''{
+	"zweck": "Geheimnis-Muster f\u00fcr Bot-Meldungen (Auftrag 236, erweitert Auftrag 247). Quelle: company-interface src/lib/geheimnis-muster.json. Spiegel: cb-brain-client scripts/geheimnis-muster.json und die Kopie in cbtool.py, Byte f\u00fcr Byte gleich. Nur gemeinsam \u00e4ndern; alle Pr\u00fcfungen pinnen die SHA-256 der Datei. Ablauf: NFKC, `entfernen` l\u00f6schen, `verwechslung` ersetzen; gepr\u00fcft werden dieser Text, derselbe nach Prozent- und HTML-Zahl-Dekodierung und derselbe r\u00fcckw\u00e4rts. Treffer: `regex`; oder `getrennt.regex`, wenn Gruppe 1 ohne Trenner mindestens `min` Zeichen hat und eine Ziffer enth\u00e4lt; oder IBAN mit L\u00e4nderl\u00e4nge und Pr\u00fcfziffer (mod 97).",
+	"entfernen": "[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0\ufff0-\ufff8]",
+	"verwechslung": {
+		"\u0430": "a",
+		"\u0435": "e",
+		"\u0456": "i",
+		"\u0458": "j",
+		"\u043a": "k",
+		"\u043e": "o",
+		"\u0440": "p",
+		"\u0441": "c",
+		"\u0443": "y",
+		"\u0445": "x",
+		"\u0455": "s",
+		"\u04bb": "h",
+		"\u0501": "d",
+		"\u051b": "q",
+		"\u051d": "w",
+		"\u0410": "A",
+		"\u0412": "B",
+		"\u0415": "E",
+		"\u0406": "I",
+		"\u0408": "J",
+		"\u041a": "K",
+		"\u041c": "M",
+		"\u041d": "H",
+		"\u041e": "O",
+		"\u0420": "P",
+		"\u0421": "C",
+		"\u0422": "T",
+		"\u0423": "Y",
+		"\u0425": "X",
+		"\u0405": "S",
+		"\u03b1": "a",
+		"\u03b9": "i",
+		"\u03ba": "k",
+		"\u03bd": "v",
+		"\u03bf": "o",
+		"\u03c1": "p",
+		"\u03c5": "u",
+		"\u03c7": "x",
+		"\u0391": "A",
+		"\u0392": "B",
+		"\u0395": "E",
+		"\u0396": "Z",
+		"\u0397": "H",
+		"\u0399": "I",
+		"\u039a": "K",
+		"\u039c": "M",
+		"\u039d": "N",
+		"\u039f": "O",
+		"\u03a1": "P",
+		"\u03a4": "T",
+		"\u03a5": "Y",
+		"\u03a7": "X"
+	},
+	"muster": [
+		{
+			"name": "cbw",
+			"regex": "(?<![A-Za-z0-9])cbw_[A-Za-z0-9]{8,}",
+			"gross_klein_egal": true,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])cbw_((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 8
+			}
+		},
+		{
+			"name": "cbw_base64",
+			"regex": "(?<![A-Za-z0-9+/_-])Y2J3X[A-Za-z0-9+/_-]{10,}",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "jwt",
+			"regex": "(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}[ \\t\\n\\r]*\\.[ \\t\\n\\r]*[A-Za-z0-9_-]{8,}",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "sk",
+			"regex": "(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}",
+			"gross_klein_egal": false,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])sk-((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 16
+			}
+		},
+		{
+			"name": "stripe",
+			"regex": "(?<![A-Za-z0-9])[rs]k_(?:live|test)_[A-Za-z0-9]{10,}",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "github_token",
+			"regex": "(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{16,}",
+			"gross_klein_egal": false,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])gh[pousr]_((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 16
+			}
+		},
+		{
+			"name": "github_pat",
+			"regex": "(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}",
+			"gross_klein_egal": false,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])github_pat_((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 20
+			}
+		},
+		{
+			"name": "sb_secret",
+			"regex": "(?<![A-Za-z0-9])sb_secret_[A-Za-z0-9_-]{10,}",
+			"gross_klein_egal": false,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])sb_secret_((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 10
+			}
+		},
+		{
+			"name": "xai",
+			"regex": "(?<![A-Za-z0-9])xai-[A-Za-z0-9]{20,}",
+			"gross_klein_egal": false,
+			"getrennt": {
+				"regex": "(?<![A-Za-z0-9])xai-((?:[ \\t\\n\\r.\\-]{0,3}[A-Za-z0-9]{3,})(?:[ \\t\\n\\r.\\-]{1,3}[A-Za-z0-9]{3,})*)",
+				"min": 20
+			}
+		},
+		{
+			"name": "aws",
+			"regex": "(?<![A-Za-z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "slack",
+			"regex": "(?<![A-Za-z0-9])xox[abposr]-[A-Za-z0-9-]{10,}",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "google",
+			"regex": "(?<![A-Za-z0-9])AIza[A-Za-z0-9_-]{30,}",
+			"gross_klein_egal": false
+		},
+		{
+			"name": "passwort",
+			"regex": "(?<![A-Za-z])(?:passwort|kennwort|password|passwd|pwd)[^:=\\n]{0,40}[:=][ \\t]*(?=[^ \\t\\n]*[0-9!?#$%&*+])[^ \\t\\n]{6,}",
+			"gross_klein_egal": true
+		}
+	],
+	"iban_laender": {
+		"AD": 24,
+		"AE": 23,
+		"AL": 28,
+		"AT": 20,
+		"AZ": 28,
+		"BA": 20,
+		"BE": 16,
+		"BG": 22,
+		"BH": 22,
+		"BR": 29,
+		"BY": 28,
+		"CH": 21,
+		"CR": 22,
+		"CY": 28,
+		"CZ": 24,
+		"DE": 22,
+		"DK": 18,
+		"DO": 28,
+		"EE": 20,
+		"EG": 29,
+		"ES": 24,
+		"FI": 18,
+		"FO": 18,
+		"FR": 27,
+		"GB": 22,
+		"GE": 22,
+		"GI": 23,
+		"GL": 18,
+		"GR": 27,
+		"GT": 28,
+		"HR": 21,
+		"HU": 28,
+		"IE": 22,
+		"IL": 23,
+		"IS": 26,
+		"IT": 27,
+		"JO": 30,
+		"KW": 30,
+		"KZ": 20,
+		"LB": 28,
+		"LC": 32,
+		"LI": 21,
+		"LT": 20,
+		"LU": 20,
+		"LV": 21,
+		"MC": 27,
+		"MD": 24,
+		"ME": 22,
+		"MK": 19,
+		"MR": 27,
+		"MT": 31,
+		"MU": 30,
+		"NL": 18,
+		"NO": 15,
+		"PK": 24,
+		"PL": 28,
+		"PS": 29,
+		"PT": 25,
+		"QA": 29,
+		"RO": 24,
+		"RS": 22,
+		"SA": 24,
+		"SE": 24,
+		"SI": 19,
+		"SK": 24,
+		"SM": 27,
+		"TN": 24,
+		"TR": 26,
+		"UA": 29,
+		"VG": 24,
+		"XK": 20
+	},
+	"beispiele": {
+		"treffer": [
+			"Schl\u00fcssel cbw_abcdefgh2345678923456789abcdefgh",
+			"CBW_ABCD1234EF",
+			"cbw\u200b_abcdefgh2345",
+			"cbw_ abcd efgh 2345",
+			"c\u00adbw_abcdefgh2345",
+			"key eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.abc",
+			"sk-ant-api03-abcdefghijklmnopqrstuvwxyz",
+			"sk-proj-ABCDEFGHIJKLMNOP1234",
+			"ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+			"github_pat_11ABCDEFG0abcdefghijklmnop_qrstuvwxyz",
+			"sb_secret_abcdefghijklmn",
+			"xai-abcdefghijklmnopqrstuvwxyz012345",
+			"IBAN DE89 3704 0044 0532 0130 00",
+			"DE89370400440532013000",
+			"\u202ecbw_abcdefgh2345",
+			"Schl\u00fcssel cbw%5Fabcdefgh23456789abcd",
+			"Y2J3X2FiY2RlZmdoMjM0NTY3ODlhYmNkZWZnaA==",
+			"cbw&#95;abcdefgh23456789",
+			"cbw_abcd\nefgh2345",
+			"cbw_abcd\tefgh2345",
+			"cbw_abcd-efgh-2345-6789",
+			"cbw_abc.def.gh2.345",
+			"\u0441bw_abcdefgh23456789",
+			"ghp_abcdefghijklmn\u03bfpqrstu0123",
+			"\uff43\uff42\uff57\uff3f\uff41\uff42\uff43\uff44\uff45\uff46\uff47\uff48\uff12\uff13\uff14\uff15",
+			"\ud835\udc1c\ud835\udc1b\ud835\udc30_abcdefgh2345",
+			"cbw\u200b_abcdefgh2345",
+			"cbw_abcd\u2028efgh2345",
+			"cbw\u180e_abcdefgh2345",
+			"cb\u034fw_abcdefgh2345",
+			"5432hgfedcba_wbc",
+			"eyJyb2xlIjoic2VydmljZV9yb2xlIn0.c2lnbmF0dXJl",
+			"eyJhbGciOiJIUzI1NiJ9 . eyJyb2xlIjoic2VydmljZSJ9",
+			"ghp_abcdefghijklmnopqrs",
+			"sk_live_BEISPIELabcd",
+			"AKIAIOSFODNN7EXAMPLE",
+			"xoxb-BEISPIEL-abcd",
+			"AIzaSyA-abcdefghijklmnopqrstuvwxyz12345",
+			"sk- ant-api03-abcdefghijklmnopqrstuvwxyz",
+			"de89 3704 0044 0532 0130 00",
+			"DE89-3704-0044-0532-0130-00",
+			"DE89.3704.0044.0532.0130.00",
+			"Passwort f\u00fcr Fillhub-Portal: Sommer2026!",
+			"cbw_ abcd efgh 2345 geht nicht, bitte pr\u00fcfen.",
+			"Mein Schl\u00fcssel cbw_ abcd efgh 2345 geht nicht.",
+			"Mein Schl\u00fcssel ist cbw_abcd efgh2345 und geht nicht.",
+			"Token: ghp_ abcd efgh ijkl mnop qrst uv12 gesperrt.",
+			"Der Token ghp_ abcd efgh ijkl mnop qrst uv12 ist gesperrt.",
+			"Kennwort: Ab12cd34!",
+			"AT61 1904 3002 3457 3201",
+			"CH93 0076 2011 6238 5295 7"
+		],
+		"kein_treffer": [
+			"cbw_kurz",
+			"Kasse liefert 403 beim Abruf",
+			"task-abcdefghijklmnopqrstuvwxyz",
+			"risk-assessment-for-the-quarter-2026",
+			"PO-049 und IN-2026-0045, FBA15MQCMGNC",
+			"Sendung 1-B-22-LS-SET mit 9.395 St\u00fcck",
+			"eyJ allein ist kein Schl\u00fcssel",
+			"github_pat_kurz",
+			"Carlo: Gluetec DPD-Nummern PO-043-1-10-V-Klebenaht-30 ersetzt, neu noch nicht gesendet.",
+			"FBA15MPF1BNQ steht auf DELIVERED, 0 von 2.000 eingebucht.",
+			"Sah FBA 488, \u00fcbersah 405 im Zulauf (FBA15MTQC892).",
+			"Widerspruch bei IN-2026-0050 richtig erkannt (J-543), Aufgabe CB-638 nicht geschlossen.",
+			"Zusage bis 06.11. nicht belegt (J-509, J-512), danach selbst korrigiert (J-515).",
+			"cbtool.py bestellung PO-049 liefert 403, obwohl Carlo Supply Chain hat.",
+			"cbtool.py sendung IN-2026-0039 bricht mit Status 500 ab.",
+			"Montag 9:00: bestellplanung --status faellig liefert f\u00fcr Marktplatz DE und US nichts.",
+			"Reklamation FBA-ID FBA15MQCMGNC, 12 Einheiten fehlen, Fall in Seller Central offen.",
+			"Abgleich versandt gegen eingebucht f\u00fcr Einsendungen der letzten 60 Tage fehlt im Tool.",
+			"Task-Liste: task-abcdefghijklmnopqrstuvwxyz kommt leer zur\u00fcck.",
+			"Risk-Assessment risk-assessment-for-the-quarter-2026 ohne Daten.",
+			"Desk-Sharing desk-reservation-room-2-floor-3 nicht im Kalender.",
+			"Ask-Funktion ask-the-wiki-about-gechem-and-ciesse fehlt.",
+			"Disk-Speicher disk-usage-of-the-export-folder voll.",
+			"Mask-Datei mask-artwork-final-version-02-2026 im Drive nicht gefunden.",
+			"EAN 4260123456789 und ASIN B0CXYZ1234 passen nicht zusammen.",
+			"Amazon-Bestellung 302-1234567-1234567 fehlt in absatz.",
+			"DHL JJD000390007880123456 h\u00e4ngt seit 3 Tagen im Zentrum.",
+			"UPS 1Z999AA10123456784 zugestellt, Wareneingang fehlt.",
+			"Lieferschein LS24 0001 0002 0003 passt nicht zur PO.",
+			"Charge LOT2026 1104 A001 B002 beim Wareneingang fehlt.",
+			"Ware-Befehle mit --ausfuehren nur nach Ja von Max: bestellung-eta lieferte 409.",
+			"Kontakt Water-i.d. (Antonio Flores) fehlt im Wiki, cbtool kontakt liefert 404.",
+			"Kronas mit RSK (KMR Tabs, Entkalker, Beuteltests) hat keine Projekt-ID.",
+			"ghp-Pr\u00fcfung: Wort ghost_writer_tool_for_suppliers kommt vor.",
+			"sk-Zahl: SKU sk-2026-11 im Export gefunden.",
+			"github_pat ist im Plugin nicht gesetzt, Schritt 2 der Anleitung fehlt.",
+			"eyJ steht am Anfang jedes JWT, das sollte die Anleitung sagen.",
+			"Sendung FBA15MPF1BNQ: 2.000 versandt, 0 eingebucht, Status DELIVERED seit 05.11.",
+			"ping liefert 401: der Schl\u00fcssel cbw_ wird nicht erkannt, bitte neu ausstellen.",
+			"Schl\u00fcssel mit Pr\u00e4fix cbw_ abgelehnt, Secret CB_TOOL_KEY pr\u00fcfen.",
+			"Fehler 401 beim Abruf, Schl\u00fcssel (cbw_\u2026) ist gesperrt.",
+			"Die Anleitung nennt sk- als Pr\u00e4fix f\u00fcr den API-Schl\u00fcssel des Lieferantenportals.",
+			"Variable ghp_ fehlt im Setup, Schritt 2 unklar.",
+			"Status 401, Schl\u00fcssel cbw_*** laut Anleitung neu setzen.",
+			"Fehler: cbw_ wird nicht erkannt, bitte neu ausstellen.",
+			"Passwort: fehlt im Setup von Fillhub.",
+			"DE89 3704 0044 0532 0130 01 hat eine falsche Pr\u00fcfziffer."
+		],
+		"bekannte_luecken": [
+			"cbw_abcd",
+			"sk-abcdefghijklmno"
+		]
+	}
+}
+'''
+
+
+def _geheimnis_pruefer(quelle: str | None = None):
+    """Liest die eingebaute Muster-Liste (GEHEIMNIS_MUSTER_JSON) und gibt eine Funktion text -> Mustername oder None
+    zurück, wie findeGeheimnis im Tool. Ist die Liste kaputt: Abbruch mit Exit 1, denn ohne Prüfung wird nie gesendet."""
+    try:
+        daten = json.loads(GEHEIMNIS_MUSTER_JSON if quelle is None else quelle)
+        entfernen = re.compile(daten["entfernen"])
+        verwechslung = str.maketrans(dict(daten["verwechslung"]))
+        laender = {str(k): int(v) for k, v in daten["iban_laender"].items()}
+        muster = []
+        for m in daten["muster"]:
+            # re.ASCII: [A-Za-z0-9] mit IGNORECASE träfe in Python sonst auch ı und İ. In JS (Flag iu) träfen ſ und K
+            # (Kelvin); beide macht NFKC vorher zu s und K, also gleich.
+            flags = re.ASCII | (re.IGNORECASE if m.get("gross_klein_egal") else 0)
+            g = m.get("getrennt")
+            getrennt = (re.compile(g["regex"], flags), int(g["min"])) if g else None
+            muster.append((str(m["name"]), re.compile(m["regex"], flags), getrennt))
+        if not muster:
+            raise ValueError("keine Muster")
+    except (ValueError, KeyError, TypeError, AttributeError, re.error):
+        raise SystemExit("Nichts gesendet: Die eingebaute Muster-Liste in cbtool.py ist kaputt. "
+                         "Ohne Prüfung sendet problem-melden nicht. Plugin aktualisieren oder Max Bescheid geben.")
+
+    def vorbereiten(s: str) -> str:
+        return entfernen.sub("", unicodedata.normalize("NFKC", s)).translate(verwechslung)
+
+    def zeichen(n: int, roh: str) -> str:
+        return chr(n) if 0 < n <= 0x10FFFF and not 0xD800 <= n <= 0xDFFF else roh
+
+    def dekodieren(s: str) -> str:
+        s = re.sub(r"%([0-9A-Fa-f]{2})", lambda t: zeichen(int(t.group(1), 16), t.group(0)), s)
+        s = re.sub(r"&#([0-9]{1,7});", lambda t: zeichen(int(t.group(1), 10), t.group(0)), s)
+        return re.sub(r"&#[xX]([0-9A-Fa-f]{1,6});", lambda t: zeichen(int(t.group(1), 16), t.group(0)), s)
+
+    ziffern = set("0123456789")
+    buchstaben = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
+    def alnum(c: str) -> bool:
+        return c in ziffern or c in buchstaben
+
+    def buchstabe(c: str) -> bool:
+        return c in buchstaben
+
+    def ziffer(c: str) -> bool:
+        return c in ziffern
+
+    def pruefziffer_gueltig(iban: str) -> bool:
+        r = 0
+        for c in iban[4:] + iban[:4]:
+            r = (r * 10 + int(c)) % 97 if ziffer(c) else (r * 100 + (ord(c) - 55)) % 97
+        return r == 1
+
+    def finde_iban(v: str) -> bool:
+        # wie findeIban im Tool: Anfang nicht mitten im Wort, Länge des Landes, einzelne Trenner, Prüfziffer mod 97
+        i = 0
+        while i + 4 <= len(v):
+            if (i == 0 or not alnum(v[i - 1])) and buchstabe(v[i]) and buchstabe(v[i + 1]) and ziffer(v[i + 2]) and ziffer(v[i + 3]):
+                land = v[i:i + 2].upper()
+                laenge = laender.get(land)
+                if laenge:
+                    rest = []
+                    j = i + 4
+                    while len(rest) < laenge - 4 and j < len(v):
+                        if alnum(v[j]):
+                            rest.append(v[j])
+                            j += 1
+                        elif v[j] in " .-" and j + 1 < len(v) and alnum(v[j + 1]):
+                            j += 1
+                        else:
+                            break
+                    if len(rest) == laenge - 4 and not (j < len(v) and alnum(v[j])):
+                        if pruefziffer_gueltig((land + v[i + 2:i + 4] + "".join(rest)).upper()):
+                            return True
+            i += 1
+        return False
+
+    def getrennter_koerper(roh: str) -> str:
+        # wie getrennterKoerper im Tool: erste Gruppe, dann Gruppen so lang wie die zweite, dann eine letzte
+        g = [x for x in re.split(r"[^A-Za-z0-9]+", roh) if x]
+        teile = g[:2]
+        i = 2
+        while i < len(g) and len(g[i]) == len(g[1]):
+            teile.append(g[i])
+            i += 1
+        if i < len(g):
+            teile.append(g[i])
+        return "".join(teile)
+
+    def finde_in(v: str):
+        for name, rx, getrennt in muster:
+            if rx.search(v):
+                return name
+            if getrennt:
+                for t in getrennt[0].finditer(v):
+                    koerper = getrennter_koerper(t.group(1))
+                    if len(koerper) >= getrennt[1] and re.search(r"[0-9]", koerper):
+                        return name
+        return "iban" if finde_iban(v) else None
+
+    def finde(s: str):
+        b = vorbereiten(s)
+        fassungen = [b]
+        d = dekodieren(b)
+        if d != b:
+            fassungen.append(vorbereiten(d))
+        fassungen.append(b[::-1])
+        for v in fassungen:
+            name = finde_in(v)
+            if name:
+                return name
+        return None
+
+    return finde
+
+
+def _geheimnis_in_feldern(finde, felder):
+    """Wie findeGeheimnisInFeldern im Tool: jedes vorhandene Feld einzeln, dann alle zusammen (Titel „cbw_abcd“, Text
+    „efgh2345 …“)."""
+    texte = [f for f in felder if isinstance(f, str)]
+    for t in texte:
+        name = finde(t)
+        if name:
+            return name
+    return finde("\n".join(texte)) if len(texte) > 1 else None
+
+
+PROBLEM_HILFE = """problem-melden: ein Problem an das Tool melden (Seite /feedback, im Tool eingerichtet auch als GitHub-Issue).
+
+  cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>] [--art zugang|fehler|funktion]
+
+  --titel   5 bis 120 Zeichen, eine Zeile, z. B. „Kasse liefert 403“. Gleicher Titel binnen 24 Stunden wird angehängt.
+  --text    10 bis 2000 Zeichen: was du versucht hast, was kam, was du gebraucht hättest.
+  --befehl  der Befehl, der scheiterte, eine Zeile, höchstens 120 Zeichen, z. B. „cbtool.py kasse“.
+  --status  HTTP-Status der Antwort, z. B. 403.
+  --art     zugang (fehlender Zugang), fehler, funktion (fehlt im Tool). Ohne: zugang bei 401 und 403, sonst fehler.
+
+Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt.
+Melden über den Schlüssel dürfen nur Bots mit eigenem Konto. Personen melden im Tool unter /feedback."""
+
+
+def cmd_problem_melden(args: list[str]) -> None:
+    if "--help" in args or "-h" in args:
+        print(PROBLEM_HILFE)
+        return
+    titel = _wert(args, "--titel")
+    text = _wert(args, "--text")
+    befehl = _wert(args, "--befehl")
+    status = _zahl(_wert(args, "--status"), "--status", 100, 599)
+    art = _wert(args, "--art")
+    _rest_leer(args)
+    if not titel or not titel.strip() or not text or not text.strip():
+        _falsch("problem-melden braucht --titel und --text.")
+    # Erst die Geheimnis-Prüfung über alle Felder (wie das Tool), dann die übrigen Ablehnungen: keine von ihnen gibt einen
+    # Fund wieder aus.
+    if _geheimnis_in_feldern(_geheimnis_pruefer(), [titel, text, befehl, art]):
+        print(GEHEIMNIS_ABGELEHNT, file=sys.stderr)  # nie den Fund oder den Text ausgeben
+        raise SystemExit(2)
+    if EINE_ZEILE.search(titel):
+        _falsch("--titel: eine Zeile.")
+    if befehl is not None and EINE_ZEILE.search(befehl):
+        _falsch("--befehl: eine Zeile.")
+    if art is not None and art not in ("zugang", "fehler", "funktion"):
+        _falsch(f"--art erwartet zugang, fehler oder funktion, nicht „{art}“.")
+    body = {"titel": titel.strip(), "text": text.strip()}
+    if befehl is not None and befehl.strip():
+        body["befehl"] = befehl.strip()
+    if status is not None:
+        body["status"] = status
+    if art is not None:
+        body["art"] = art
+    res = call(PROBLEM, body, plain_errors=True, bei_404=PROBLEM_FEHLT)
+    m = res.get("meldung") or {}
+    if m.get("neu"):
+        print(f"Gemeldet (neu): {m.get('titel')}")
+    else:
+        print(f"Angehängt an die bestehende Meldung: {m.get('titel')} (gleiche Meldung binnen 24 Stunden)")
+    print(f"Tool-ID: {m.get('id')}")
+    g = res.get("github") or {}
+    if g.get("uebertragen") and g.get("url"):
+        print(f"GitHub: {g['url']}")
+    elif g.get("status"):
+        print(f"Nur im Tool (Übertragung an GitHub gescheitert, Status {g['status']}).")
+    else:
+        print("Nur im Tool.")
+    if m.get("heuteGemeldet") is not None:
+        print(f"Heute gemeldet: {m['heuteGemeldet']} von {m.get('heuteErlaubt', 10)}.")
+
+
 KASSE_BEFEHLE = {
     "kasse": cmd_kasse,
     "kasse-melden": cmd_kasse_melden,
@@ -3028,7 +3573,7 @@ PROJEKT_BEFEHLE = {
 
 def main(argv: list[str]) -> None:
     global HILFE
-    if len(argv) < 2:
+    if len(argv) < 2 or argv[1] in ("--help", "-h", "help"):
         print(__doc__)
         return
     cmd, args = argv[1], argv[2:]
@@ -3075,6 +3620,9 @@ def main(argv: list[str]) -> None:
     elif cmd in KASSE_BEFEHLE:
         HILFE = "Kasse:"
         KASSE_BEFEHLE[cmd](args)
+    elif cmd == "problem-melden":
+        HILFE = "Problem:"
+        cmd_problem_melden(args)
     else:
         print(__doc__)
         raise SystemExit(2)
