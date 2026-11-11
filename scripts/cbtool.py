@@ -110,7 +110,8 @@ Problem:  cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>
                           [--art zugang|fehler|funktion]
           Meldet fehlenden Zugang (401/403 mit Befehl), einen Fehler oder eine fehlende Funktion an das Tool (Seite
           /feedback). Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10
-          Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt. Hilfe: problem-melden --help
+          Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt. Nur Bots mit eigenem Konto; Personen
+          melden im Tool unter /feedback. Hilfe: problem-melden --help
 
 Hilfe:    cbtool.py --help | -h | help                       diese Übersicht
 """
@@ -118,7 +119,7 @@ Hilfe:    cbtool.py --help | -h | help                       diese Übersicht
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
 from __future__ import annotations
 
-import http.client, json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
+import http.client, json, os, re, stat, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~/.cb-brain")
@@ -2553,11 +2554,46 @@ def cmd_kasse_erlassen(args: list[str]) -> None:
 
 
 # ---------------------------------------------------------------- Problem melden (Tool, Auftrag 229, 11.11.2026)
-# Das Tool prüft Länge, Zähler und Dubletten (src/lib/bot-meldung-core.ts). Das Skript lehnt nur vorab ab, was nie
-# gesendet werden darf: etwas, das wie ein Schlüssel aussieht.
+# Das Tool prüft Länge, Zähler, Dubletten und wer melden darf (nur Bot-Konten; src/lib/bot-meldung-core.ts,
+# konto-rechte.ts). Das Skript lehnt nur vorab ab, was nie gesendet werden darf: etwas, das wie ein Schlüssel, Token
+# oder eine Kontonummer aussieht. Die Muster stehen in geheimnis-muster.json neben diesem Skript, Byte für Byte gleich
+# company-interface src/lib/geheimnis-muster.json; die Logik ist dieselbe wie dort in geheimnis-muster.ts.
 PROBLEM = "/api/brain-read/problem"
 PROBLEM_FEHLT = "problem-melden gibt es im Tool noch nicht (älterer Stand). Bitte Max direkt Bescheid geben."
-SCHLUESSEL_MUSTER = re.compile(r"cbw_[a-z0-9]{8,}", re.IGNORECASE)
+GEHEIMNIS_MUSTER_DATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)), "geheimnis-muster.json")
+GEHEIMNIS_ABGELEHNT = ("Die Meldung enthält etwas, das wie ein Schlüssel, Token oder eine Kontonummer aussieht. "
+                       "Bitte ohne diese Angabe melden. Nichts gesendet.")
+
+
+def _geheimnis_pruefer():
+    """Lädt geheimnis-muster.json und gibt eine Funktion text -> Mustername oder None zurück. Fehlt die Datei oder ist sie
+    kaputt: Abbruch mit Exit 1, denn ohne Prüfung wird nie gesendet."""
+    try:
+        with open(GEHEIMNIS_MUSTER_DATEI, encoding="utf-8") as f:
+            daten = json.load(f)
+        entfernen = re.compile(daten["entfernen"])
+        muster = []
+        for m in daten["muster"]:
+            # re.ASCII: [A-Za-z0-9] mit IGNORECASE träfe in Python sonst auch ı und İ, in JS (Flag iu) nicht.
+            flags = re.ASCII | (re.IGNORECASE if m.get("gross_klein_egal") else 0)
+            muster.append((m["name"], re.compile(m["regex"], flags), bool(m.get("auch_ohne_leerraum"))))
+        if not muster:
+            raise ValueError("keine Muster")
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, re.error):
+        raise SystemExit(f"Nichts gesendet: Die Muster-Prüfung (geheimnis-muster.json) fehlt oder ist kaputt: {GEHEIMNIS_MUSTER_DATEI}. "
+                         "Ohne Prüfung sendet problem-melden nicht. Plugin aktualisieren oder Max Bescheid geben.")
+
+    def finde(s: str):
+        b = entfernen.sub("", unicodedata.normalize("NFKC", s))
+        ohne = re.sub(r"\s+", "", b)
+        for name, rx, ohne_leerraum in muster:
+            if rx.search(b) or (ohne_leerraum and rx.search(ohne)):
+                return name
+        return None
+
+    return finde
+
+
 PROBLEM_HILFE = """problem-melden: ein Problem an das Tool melden (Seite /feedback, im Tool eingerichtet auch als GitHub-Issue).
 
   cbtool.py problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>] [--art zugang|fehler|funktion]
@@ -2568,7 +2604,8 @@ PROBLEM_HILFE = """problem-melden: ein Problem an das Tool melden (Seite /feedba
   --status  HTTP-Status der Antwort, z. B. 403.
   --art     zugang (fehlender Zugang), fehler, funktion (fehlt im Tool). Ohne: zugang bei 401 und 403, sonst fehler.
 
-Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt."""
+Nur Text. Keine Schlüssel, keine Mailinhalte, keine Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag; gleiche Meldung binnen 24 Stunden wird angehängt.
+Melden über den Schlüssel dürfen nur Bots mit eigenem Konto. Personen melden im Tool unter /feedback."""
 
 
 def cmd_problem_melden(args: list[str]) -> None:
@@ -2585,8 +2622,9 @@ def cmd_problem_melden(args: list[str]) -> None:
         _falsch("problem-melden braucht --titel und --text.")
     if art is not None and art not in ("zugang", "fehler", "funktion"):
         _falsch(f"--art erwartet zugang, fehler oder funktion, nicht „{art}“.")
-    if any(SCHLUESSEL_MUSTER.search(w) for w in (titel, text, befehl or "")):
-        print("Nicht gesendet: Die Meldung enthält etwas, das wie ein Schlüssel aussieht (cbw_…). Bitte ohne Schlüssel melden.", file=sys.stderr)
+    finde = _geheimnis_pruefer()
+    if any(finde(w) for w in (titel, text, befehl or "")):
+        print(GEHEIMNIS_ABGELEHNT, file=sys.stderr)  # nie den Fund oder den Text ausgeben
         raise SystemExit(2)
     body = {"titel": titel.strip(), "text": text.strip()}
     if befehl is not None and befehl.strip():

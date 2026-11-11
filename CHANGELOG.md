@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.1 (11.11.2026)
+
+- `problem-melden` prüft vor dem Senden mit derselben Muster-Liste wie das Tool: `scripts/geheimnis-muster.json`, Byte für Byte gleich company-interface `src/lib/geheimnis-muster.json`, gleiche Logik wie dort `geheimnis-muster.ts` (NFKC, Null-Breiten- und Steuerzeichen raus, einige Muster auch ohne Leerraum). Erkennt jetzt neben `cbw_` auch JWTs, `sk-`, GitHub-Tokens, `sb_secret_`, `xai-` und IBANs. Bei einem Treffer: Exit 2, nichts gesendet, der Fund steht nicht in der Ausgabe.
+- Fehlt die Muster-Datei oder ist sie kaputt, bricht `problem-melden` mit Exit 1 ab und sendet nichts.
+- Über den Schlüssel melden nur Bots mit eigenem Konto; Personen bekommen vom Tool 403 und melden im Tool unter /feedback. Vor der Migration im Tool kommt 503. Beide Sätze des Tools gehen wörtlich hinaus (Exit 1). Hilfe-Text nachgezogen.
+- `tests/pruefe-problem-melden.py`: alle Beispiele der Muster-Datei in `--titel`, `--text` und `--befehl`, gepinnte SHA-256 der Muster-Datei, Byte-Vergleich mit company-interface, wenn eine Kopie da ist (sonst „übersprungen“), 403 und 503.
+
 ## 0.21.0 (11.11.2026)
 
 - Neu: `problem-melden --titel <text> --text <text> [--befehl <text>] [--status <zahl>] [--art zugang|fehler|funktion]`: meldet fehlenden Zugang, einen Fehler oder eine fehlende Funktion an das Tool (Seite /feedback; ist es im Tool eingerichtet, zusätzlich als GitHub-Issue). Nur Text, keine Schlüssel, Mailinhalte, Finanz- oder Personendaten. Höchstens 10 Meldungen am Tag, gleiche Meldung binnen 24 Stunden wird angehängt. Etwas, das wie ein Schlüssel aussieht (`cbw_…`), lehnt schon das Skript ab, gesendet wird dann nichts.

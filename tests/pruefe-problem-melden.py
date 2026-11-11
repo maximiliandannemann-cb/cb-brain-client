@@ -118,5 +118,67 @@ antwort.update(status=404, json={"error": "Nicht gefunden."})
 code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
 pruefe("404: Route fehlt, eigener Satz", code == 1 and "gibt es im Tool noch nicht" in out)
 
+antwort.update(status=403, json={"error": "Über den Schlüssel melden nur Bots mit eigenem Konto. Personen melden im Tool unter /feedback."})
+code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
+pruefe("403 Personen-Schlüssel: Satz des Tools wörtlich, Exit 1",
+       code == 1 and a is not None and "Über den Schlüssel melden nur Bots mit eigenem Konto. Personen melden im Tool unter /feedback." in out)
+antwort.update(status=503, json={"error": "Problem melden ist noch nicht freigeschaltet (Migration bot_meldung_melden fehlt). Bitte Max direkt Bescheid geben."})
+code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
+pruefe("503 vor der Migration: Satz des Tools wörtlich, Exit 1", code == 1 and a is not None and "noch nicht freigeschaltet" in out)
+
+# --- Geheimnis-Muster: gemeinsame Liste mit dem Tool (company-interface src/lib/geheimnis-muster.json)
+import hashlib, pwd
+
+MUSTER_JSON = os.path.join(os.path.dirname(CBTOOL), "geheimnis-muster.json")
+# Gepinnte SHA-256 der Muster-Datei: nur gemeinsam mit company-interface src/lib/geheimnis-muster.json ändern
+# (dort pinnt die Prüfung dieselbe Zahl; die Dateien sind Byte für Byte gleich).
+MUSTER_SHA256 = "bad8e1e5e138840814fc0fadbfd00e029d731cdfabbf42990113420b30f84934"
+with open(MUSTER_JSON, "rb") as fh:
+    muster_bytes = fh.read()
+pruefe("geheimnis-muster.json: SHA-256 gleich der gepinnten", hashlib.sha256(muster_bytes).hexdigest() == MUSTER_SHA256)
+kandidaten = []
+if os.environ.get("CB_COMPANY_INTERFACE_DIR"):
+    kandidaten.append(os.path.join(os.environ["CB_COMPANY_INTERFACE_DIR"], "src", "lib", "geheimnis-muster.json"))
+echtes_home = pwd.getpwuid(os.getuid()).pw_dir  # HOME ist oben auf ein Testverzeichnis umgebogen
+for wt in ("wt-bot-meldung", "company-interface"):
+    kandidaten.append(os.path.join(echtes_home, "projects", "cleverbrands", wt, "src", "lib", "geheimnis-muster.json"))
+quelle = next((p for p in kandidaten if os.path.isfile(p)), None)
+if quelle:
+    with open(quelle, "rb") as fh:
+        pruefe(f"geheimnis-muster.json Byte für Byte gleich {quelle}", fh.read() == muster_bytes)
+else:
+    print("übersprungen: Byte-Vergleich mit company-interface (keine Kopie gefunden; CB_COMPANY_INTERFACE_DIR setzen)")
+
+beispiele = json.loads(muster_bytes.decode("utf-8"))["beispiele"]
+GRUND = {"--titel": "Kasse liefert 403", "--text": "Beim Abruf der Kasse kommt 403.", "--befehl": "cbtool.py kasse"}
+antwort.update(status=201, json=NEU)
+for i, beispiel in enumerate(beispiele["treffer"]):
+    for feld in ("--titel", "--text", "--befehl"):
+        argv = dict(GRUND)
+        argv[feld] = beispiel if feld != "--text" else "Beim Abruf: " + beispiel
+        code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
+        pruefe(f"treffer[{i}] in {feld}: Exit 2, nichts gesendet, Beispiel nicht in der Ausgabe",
+               code == 2 and a is None and "wie ein Schlüssel" in out and beispiel not in out and beispiel.strip() not in out)
+for i, beispiel in enumerate(beispiele["kein_treffer"]):
+    for feld in ("--titel", "--text", "--befehl"):
+        argv = dict(GRUND)
+        argv[feld] = beispiel if feld != "--text" else "Beim Abruf: " + beispiel
+        code, out, a = lauf(["problem-melden"] + [x for kv in argv.items() for x in kv])
+        pruefe(f"kein_treffer[{i}] in {feld}: gesendet", code == 0 and a is not None and a["body"][feld[2:]] == argv[feld].strip())
+
+# --- Muster-Datei fehlt oder ist kaputt: Abbruch mit Exit 1, nichts ungeprüft gesendet
+alt_pfad = getattr(cb, "GEHEIMNIS_MUSTER_DATEI", None)
+for name, inhalt in [("fehlt", None), ("kaputt", "{ kein json"), ("ohne muster", '{"entfernen": "[\\\\u200B]"}'),
+                     ("regex kaputt", '{"entfernen": "[\\\\u200B]", "muster": [{"name": "x", "regex": "(", "gross_klein_egal": false, "auch_ohne_leerraum": false}]}')]:
+    pfad = os.path.join(home, "muster-" + name.replace(" ", "-") + ".json")
+    if inhalt is not None:
+        with open(pfad, "w", encoding="utf-8") as fh:
+            fh.write(inhalt)
+    cb.GEHEIMNIS_MUSTER_DATEI = pfad
+    code, out, a = lauf(["problem-melden", "--titel", "Kasse liefert 403", "--text", "Beim Abruf kommt 403."])
+    pruefe(f"Muster-Datei {name}: Exit 1, nichts gesendet, klare Meldung", code == 1 and a is None and "geheimnis-muster.json" in out)
+if alt_pfad is not None:
+    cb.GEHEIMNIS_MUSTER_DATEI = alt_pfad
+
 print("\n" + ("alles grün" if fehler == 0 else f"{fehler} Fehler"))
 sys.exit(1 if fehler else 0)
