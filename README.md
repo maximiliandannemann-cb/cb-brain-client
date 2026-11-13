@@ -35,7 +35,7 @@ Die Bruno-Punkte zählen seit 20.10.2026 jede erledigte Aufgabe nach Größe: kl
 
 `/offen` sammelt am Ende einer Sitzung, was dort offen geblieben ist (eigene Zusagen, nächste Schritte, Warten auf andere), prüft mit `aufgaben --suche` auf Dubletten und zeigt eine kurze Liste mit Titel, Person und Frist. Angelegt wird erst nach ausdrücklichem Ja; zu einer schon offenen Aufgabe schlägt es eine Notiz vor. Besteht ein Prompt nur aus einem Abschied („danke, das wars“, „Feierabend!“), erinnert der Kontext-Hook Claude einmal je Sitzung daran; ein Abschiedswort in einer Arbeitsanweisung („Schick das bis morgen an Mats“) zählt nicht. Stempel `~/.cb-brain/offen-angeboten`: eine Zeile je Sitzungs-ID mit Zeitpunkt, Einträge älter als sieben Tage fallen weg.
 
-Prüfskripte (ohne Framework, ohne Netz, macOS-Python 3.9): `/usr/bin/python3 tests/pruefe-offen.py` und `/usr/bin/python3 tests/pruefe-grund.py` (Body von `aufgabe-aendern` mit und ohne `--grund`), `/usr/bin/python3 tests/pruefe-kasse.py` (Kasse), `/usr/bin/python3 tests/pruefe-journal.py` (Journal), `/usr/bin/python3 tests/pruefe-stand.py` (Kontextzeile mit Stand), `/usr/bin/python3 tests/pruefe-sendung-mengen.py` (Amazon-Mengen in `sendung`).
+Prüfskripte (ohne Framework, ohne Netz, macOS-Python 3.9): `/usr/bin/python3 tests/pruefe-offen.py` und `/usr/bin/python3 tests/pruefe-grund.py` (Body von `aufgabe-aendern` mit und ohne `--grund`), `/usr/bin/python3 tests/pruefe-kasse.py` (Kasse), `/usr/bin/python3 tests/pruefe-journal.py` (Journal), `/usr/bin/python3 tests/pruefe-stand.py` (Kontextzeile mit Stand), `/usr/bin/python3 tests/pruefe-sendung-mengen.py` (Amazon-Mengen in `sendung`), `/usr/bin/python3 tests/pruefe-ab-filter.py` (`bestellungen --ab`).
 
 ## Kaffeekasse (ab v0.6.0)
 
