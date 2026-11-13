@@ -1,6 +1,6 @@
 ---
 name: ware
-description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO, meldet Meilensteine und Wareneingänge, Einsendungen als abgeholt oder eingebucht und Abholungen von Direktlieferungen (mit Amazon-ID), alles nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
+description: Liest Bestellungen (POs), Sendungen zu Amazon, Bestand, Bestellplanung und Absatz aus dem CleverBrands-Tool; verschiebt den bestätigten Termin (ETA) einer offenen PO, meldet Meilensteine und Wareneingänge, Einsendungen als abgeholt oder eingebucht und Abholungen von Direktlieferungen (mit Amazon-ID), alles nur nach Ja der Person. Für Fragen wie „Wo steht PO-049?“, „Was ist unterwegs zu Amazon?“, „Wie viel Lavendelsäckchen liegt wo?“, „Wann muss die nächste Bestellung raus?“, „Wie lief Produkt X letzte Woche auf Amazon und im Shop?“, auch für Lieferant, ETA, fehlende Auftragsbestätigung (AB), Wareneingang, FBA-Bestand, Lager, Verkäufe, Sitzungen, Conversion.
 ---
 
 # /ware
@@ -12,6 +12,7 @@ Aufruf immer `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cbtool.py" <befehl>`. Lesen
 | Frage | Befehl |
 |---|---|
 | Was ist bestellt, was hängt, was kommt wann? | `bestellungen` (offene), `--status alle` mit Angelieferten, `--suche <PO, Lieferant, Produkt, SKU>` |
+| Wo fehlt die Auftragsbestätigung (AB), bei wem nachfassen? | `bestellungen --ab ueberfaellig` (AB fehlt seit 5 Werktagen oder kein Bestelltag erfasst), `--ab fehlt` für alle offenen ohne AB |
 | Eine bestimmte PO | `bestellung PO-049` (Anfang reicht, wenn eindeutig) |
 | Was ist unterwegs zu Amazon? | `sendungen`, `--status alle`, `--suche <Nummer, Amazon-ID, Lager, SKU>` |
 | Eine Sendung, mit versandt, eingebucht, offen je Position | `sendung IN-2026-0039` oder `sendung FBA15MM4GTB5` |
@@ -100,6 +101,7 @@ Heute ist die Tür im Tool für alle geschlossen: `einsendung-starten` antwortet
 - **Conversion über 100 % oder mit „zu hoch“:** Für Tage vor dem 11.07.2026 (alte Flieber-Historie) fehlen die Sitzungen. Den Hinweis aus der Ausgabe weitergeben, die Zahl nicht deuten; für eine belastbare Conversion den Zeitraum ab 11.07.2026 abfragen.
 - Shops zeigen Umsatz nur je Shop, je Produkt nur Stück und Bestellungen (so wie das Tool). Keine Aufteilung selbst rechnen.
 - Keine Mails senden. Eine Rückfrage an einen Lieferanten höchstens als Entwurf im Chat.
+- AB nachhalten: `bestellungen --ab ueberfaellig` nutzen, wenn jemand fragt, wo die AB fehlt, oder im Morgenablauf eines Bots. Je Zeile höchstens einen Nachfass-Entwurf an den Lieferanten, PO-Nummer wörtlich; bei „kein Bestelltag erfasst“ ohne „seit N Werktagen“ formulieren. „noch nicht live“ heißt: das Tool kann es noch nicht, im Tool nachsehen.
 - Schreiben nur über `bestellung-eta`, `bestellung-meilenstein`, `einsendung-status`, `sendung-abholen` und `einsendung-starten`, nur nach Ja (Abschnitte oben). Nichts sonst ändern, auch nicht auf Bitte; ins Tool verweisen. Transport bestätigen und Abbrechen gehen nur im Tool.
 
 ## Fehler

@@ -31,7 +31,8 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|wartet|erl
           oder --faellig-weg. Ab 19.10.2026 Pflicht, sobald die Aufgabe schon eine Frist hatte.
           Prio: 1 niedrig, 2 mittel, 3 hoch, 4 dringend. Löschen geht nur im Tool.
 
-Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>]
+Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>] [--ab fehlt|ueberfaellig]
+                                            --ab fehlt: ohne Auftragsbestätigung; ueberfaellig: ab 5 Werktagen ohne AB
           cbtool.py bestellung PO-049                    (wörtlich oder eindeutiger Anfang)
           cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>] [--abweichung]
           cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
@@ -850,8 +851,30 @@ def _felder(paare) -> None:
 
 # ---- Bestellungen
 
+AB_FELDER = ("abFehlt", "abFehltSeitWerktage", "abUeberfaellig")  # seit company-interface PR #831 (Auftrag 302)
+AB_NICHT_LIVE = ("AB-Filter: diese Funktion ist im Tool noch nicht live (das Tool liefert die AB-Felder noch nicht). "
+                 "Bis dahin im Tool unter Bestellungen nachsehen, welche Bestellung ohne AB ist.")
+AB_TITEL = {"fehlt": "ohne AB", "ueberfaellig": "mit überfälliger AB"}
+
+
+def _ab_text(b: dict) -> str | None:
+    """„AB fehlt seit 6 Werktagen, überfällig“ wie abFehltText (po-state.ts); None, wenn die AB da ist oder das Tool die Felder nicht liefert."""
+    if not b.get("abFehlt"):
+        return None
+    w = b.get("abFehltSeitWerktage")
+    if w is None:
+        text = "AB fehlt (kein Bestelltag erfasst)"
+    elif w == 0 and b.get("bestelltAm") == _heute_berlin():
+        text = "AB fehlt seit heute"
+    else:
+        text = f"AB fehlt seit {w} {'Werktag' if w == 1 else 'Werktagen'}"
+    return text + (", überfällig" if b.get("abUeberfaellig") else "")
+
+
 def _po_zeile(b: dict) -> str:
     teile = [b.get("po") or "?", b.get("status") or "?"]
+    if _ab_text(b):
+        teile.append(_ab_text(b))
     produkt = b.get("produkt") or ""
     if b.get("weitereProdukte"):
         produkt += f" (+{b['weitereProdukte']} weitere)"
@@ -888,6 +911,7 @@ def _po_einzeln(b: dict) -> None:
         ("Menge", f"{_n(m.get('gesamt'))} gesamt, {_n(m.get('eingegangen'))} eingegangen, {_n(m.get('offen'))} offen"),
         ("Nächster Schritt", b.get("naechsterSchritt")),
         ("AB-Nummer", b.get("abNummer")),
+        ("AB", (_ab_text(b) or "").removeprefix("AB ") or None),
         ("Teil von", b.get("teilVon")),
         ("Link", b.get("link")),
     ))
@@ -897,14 +921,26 @@ def cmd_bestellungen(args: list[str]) -> None:
     status = _wahl(_wert(args, "--status"), "--status", ("offen", "alle"))
     suche = _wert(args, "--suche")
     limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
+    ab = _wert(args, "--ab")
+    if ab is not None:  # „überfällig“ mit Umlaut ist dieselbe Wahl
+        ab = _wahl(ab.replace("ü", "ue").replace("Ü", "Ue").replace("ä", "ae").replace("Ä", "Ae"), "--ab", ("fehlt", "ueberfaellig"))
     _rest_leer(args)
-    res = _ware_get("/bestellungen", {"status": status, "suche": suche, "limit": limit})
+    try:
+        res = _ware_get("/bestellungen", {"status": status, "suche": suche, "limit": limit, "ab": ab})
+    except SystemExit as e:
+        # Tool vor PR #831: „Unbekannte Parameter: ab. …“ (400). Andere Fehler bleiben der Text des Tools.
+        if ab and getattr(e, "status", None) == 400 and re.search(r"Unbekannte Parameter:[^.]*\bab\b", str(e.code)):
+            raise SystemExit(AB_NICHT_LIVE)
+        raise
     liste = res.get("bestellungen") or []
+    if ab and any(not all(k in b for k in AB_FELDER) for b in liste):
+        raise SystemExit(AB_NICHT_LIVE)  # Tool hat ab überhört: die Liste wäre ungefiltert
+    zusatz = (f" {AB_TITEL[ab]}" if ab else "") + (f" zu „{suche}“" if suche else "")
     art = "Offene Bestellungen" if (status or "offen") == "offen" else "Bestellungen"
     if not liste:
-        print(f"Keine {'offenen ' if status != 'alle' else ''}Bestellungen" + (f" zu „{suche}“" if suche else "") + ".")
+        print(f"Keine {'offenen ' if status != 'alle' else ''}Bestellungen" + zusatz + ".")
     else:
-        _kopf(art + (f" zu „{suche}“" if suche else ""), res, liste)
+        _kopf(art + zusatz, res, liste)
         _gruppen(liste, _po_zeile)
         if len(liste) <= WENIGE:
             for b in liste:
