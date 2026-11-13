@@ -2,7 +2,7 @@
 
 ## 0.22.0 (13.11.2026)
 
-- Neu: `bestellungen --ab fehlt|ueberfaellig`: nur Bestellungen ohne Auftragsbestätigung (`fehlt`) oder solche, bei denen sie seit 5 Werktagen fehlt (`ueberfaellig`, Schwelle des Tools). Je Bestellung „AB fehlt seit N Werktagen“, „, überfällig“ ab der Schwelle, ohne Bestelltag „AB fehlt (kein Bestelltag erfasst)“. Ein anderer Wert wird lokal abgelehnt (Exit 2), „überfällig“ mit Umlaut geht auch.
+- Neu: `bestellungen --ab fehlt|ueberfaellig`: nur Bestellungen ohne Auftragsbestätigung (`fehlt`) oder solche, bei denen sie seit 5 Werktagen fehlt oder kein Bestelltag erfasst ist (`ueberfaellig`, Schwelle des Tools). Je Bestellung „AB fehlt seit N Werktagen“, „, überfällig“ ab der Schwelle, ohne Bestelltag „AB fehlt (kein Bestelltag erfasst)“. Ein anderer Wert wird lokal abgelehnt (Exit 2), „überfällig“ mit Umlaut geht auch.
 - `bestellungen` ohne Filter und `bestellung <PO>` zeigen dieselbe AB-Angabe, sobald das Tool sie liefert.
 - Prüfskript `tests/pruefe-ab-filter.py`.
 - Braucht das Tool mit den Feldern `abFehlt`, `abFehltSeitWerktage`, `abUeberfaellig` und dem Filter `ab` (company-interface PR #831). Mit einem älteren Tool sagt `--ab` „diese Funktion ist im Tool noch nicht live“, die übrigen Befehle bleiben wie bisher.

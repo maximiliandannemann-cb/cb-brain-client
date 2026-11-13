@@ -107,14 +107,26 @@ pruefe("fehlt: 2 Werktage, nicht überfällig", "PO-070-1-1-TEST-FRISCH · Beste
 pruefe("fehlt: Einzahl Werktag", "AB fehlt seit 1 Werktag · " in aus, aus)
 pruefe("fehlt: Josie überfällig", "AB fehlt seit 23 Werktagen, überfällig" in aus, aus)
 
+# 2b. „seit heute“ nur am Bestelltag (wie abFehltText); 0 Werktage an einem anderen Tag (Bestelltag in der Zukunft) bleibt eine Zahl.
+cb._jetzt = lambda: cb.datetime(2026, 11, 13, 9, 0, tzinfo=cb.timezone.utc)
+HEUTE = bestellung("PO-072-1-1-TEST-HEUTE", "Gluetec", 0, False, bestellt="2026-11-13")
+ZUKUNFT = bestellung("PO-073-1-1-TEST-ZUKUNFT", "Gluetec", 0, False, bestellt="2026-11-20")
+aus, code = lauf(["bestellungen", "--ab", "fehlt"], {"bestellungen": [HEUTE, ZUKUNFT], "anzahl": 2, "gekuerzt": False, "stand": STAND})
+pruefe("heute bestellt: „seit heute“", "PO-072-1-1-TEST-HEUTE · Bestellt · AB fehlt seit heute · " in aus, aus)
+pruefe("Bestelltag in der Zukunft: 0 Werktagen", "PO-073-1-1-TEST-ZUKUNFT · Bestellt · AB fehlt seit 0 Werktagen · " in aus, aus)
+
 # 3. Schreibweise mit Umlaut und Großbuchstaben wird angenommen und als ueberfaellig gesendet.
 aus, code = lauf(["bestellungen", "--ab", "Überfällig"], {"bestellungen": [GWO_6], "anzahl": 1, "gekuerzt": False, "stand": STAND})
 pruefe("Umlaut: als ueberfaellig gesendet", query() == {"ab": "ueberfaellig"}, str(query()))
+aus, code = lauf(["bestellungen", "--ab", "u\u0308berfa\u0308llig"], {"bestellungen": [GWO_6], "anzahl": 1, "gekuerzt": False, "stand": STAND})
+pruefe("Umlaut zerlegt (NFD): als ueberfaellig gesendet", query() == {"ab": "ueberfaellig"}, str(query()))
 
 # 4. ungültiger Wert: lokal abgelehnt, keine Anfrage, Exit 2.
 aus, code = lauf(["bestellungen", "--ab", "offen"], {"bestellungen": [], "anzahl": 0, "stand": STAND})
 pruefe("ungültig: keine Anfrage", anfragen == [], str(anfragen))
 pruefe("ungültig: Exit 2 und Text", code == 2 and "--ab erwartet fehlt oder ueberfaellig" in aus, f"{code}\n{aus}")
+aus, code = lauf(["bestellungen", "--ab", "fällig"], {"bestellungen": [], "anzahl": 0, "stand": STAND})
+pruefe("ungültig: Meldung nennt die Eingabe", code == 2 and "nicht „fällig“" in aus and anfragen == [], f"{code}\n{aus}")
 aus, code = lauf(["bestellungen", "--ab"], {"bestellungen": [], "anzahl": 0, "stand": STAND})
 pruefe("ohne Wert: keine Anfrage, Exit 2", anfragen == [] and code == 2 and "--ab braucht einen Wert" in aus, f"{code}\n{aus}")
 

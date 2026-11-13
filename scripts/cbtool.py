@@ -32,7 +32,7 @@ Aufgaben: cbtool.py aufgaben [--fuer ich|alle|<name>] [--status offen|wartet|erl
           Prio: 1 niedrig, 2 mittel, 3 hoch, 4 dringend. Löschen geht nur im Tool.
 
 Ware:     cbtool.py bestellungen [--status offen|alle] [--suche <text>] [--limit <n>] [--ab fehlt|ueberfaellig]
-                                            --ab fehlt: ohne Auftragsbestätigung; ueberfaellig: ab 5 Werktagen ohne AB
+                                            --ab fehlt: ohne Auftragsbestätigung; ueberfaellig: ab 5 Werktagen ohne AB oder ohne Bestelltag
           cbtool.py bestellung PO-049                    (wörtlich oder eindeutiger Anfang)
           cbtool.py sendungen [--status offen|alle] [--suche <text>] [--limit <n>] [--abweichung]
           cbtool.py sendung IN-2026-0039                 (oder Amazon-Shipment-ID)
@@ -111,7 +111,7 @@ Kasse:    cbtool.py kasse                                    Stand, eigene Meldu
 # Ohne diese Zeile wertet 3.9 die Typhinweise `str | None` beim Laden aus und bricht mit TypeError ab.
 from __future__ import annotations
 
-import http.client, json, os, re, stat, sys, time, urllib.error, urllib.parse, urllib.request
+import http.client, json, os, re, stat, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 HOME = os.path.expanduser("~/.cb-brain")
@@ -873,8 +873,9 @@ def _ab_text(b: dict) -> str | None:
 
 def _po_zeile(b: dict) -> str:
     teile = [b.get("po") or "?", b.get("status") or "?"]
-    if _ab_text(b):
-        teile.append(_ab_text(b))
+    ab = _ab_text(b)
+    if ab:
+        teile.append(ab)
     produkt = b.get("produkt") or ""
     if b.get("weitereProdukte"):
         produkt += f" (+{b['weitereProdukte']} weitere)"
@@ -922,8 +923,10 @@ def cmd_bestellungen(args: list[str]) -> None:
     suche = _wert(args, "--suche")
     limit = _zahl(_wert(args, "--limit"), "--limit", 1, 200)
     ab = _wert(args, "--ab")
-    if ab is not None:  # „überfällig“ mit Umlaut ist dieselbe Wahl
-        ab = _wahl(ab.replace("ü", "ue").replace("Ü", "Ue").replace("ä", "ae").replace("Ä", "Ae"), "--ab", ("fehlt", "ueberfaellig"))
+    if ab is not None:  # „überfällig“ mit Umlaut (auch zerlegt, NFD) ist dieselbe Wahl; die Fehlermeldung nennt die Eingabe
+        nfc = unicodedata.normalize("NFC", ab)
+        ab = next((e for e in ("fehlt", "ueberfaellig") if e == nfc.strip().lower().replace("ü", "ue").replace("ä", "ae")), None) \
+            or _falsch(f"--ab erwartet fehlt oder ueberfaellig, nicht „{ab}“.")
     _rest_leer(args)
     try:
         res = _ware_get("/bestellungen", {"status": status, "suche": suche, "limit": limit, "ab": ab})
