@@ -763,6 +763,9 @@ def _zeitpunkt(wert: str | None) -> str | None:
 
 
 STAND_TEXT = {
+    # Satz des Tools zum Stand des Amazon-Bestands (Bot-Tür bestand, Auftrag 495), wörtlich: „Amazon-Bestand heute 06:10
+    # (Amazon direkt)“ bzw. „Amazon-Bestand vom 17.11. (Openbridge), 2 Tage alt“. Steht er da, entfällt amazonBestandTag.
+    "amazonBestandStand": ("Bestand:", str),
     "amazonBestandTag": ("Amazon-Bestand vom", _datum_text),
     "amazonBisTag": ("Amazon-Verkäufe bis", _datum_text),
     "amazonSync": ("Amazon-Abgleich", _zeitpunkt),
@@ -770,19 +773,46 @@ STAND_TEXT = {
     "letzterLauf": ("letzter Planungslauf", _zeitpunkt),
     "lager": ("Lager", str),
     "neuSeit": ("neu seit", _datum_text),
+    "hinweis": ("hinweis", str),  # bestand, bestellplanung: Satz des Tools; Beschriftung wie bis 0.20.0, Ausgabe unverändert
 }
 
 
+def _stand_unbekannt(v) -> str | None:
+    """Wert eines Stand-Schlüssels, den dieses Plugin noch nicht kennt (neueres Tool): ohne den Rohnamen, Datum und
+    Zeitpunkt lesbar, sonst der Text des Tools; leer oder kein Text › nichts (ohne Beschriftung sagt „unbekannt“ nichts)."""
+    if isinstance(v, bool) or not isinstance(v, (str, int, float)) or v == "":
+        return None
+    if isinstance(v, str) and re.match(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}.*)?$", v.strip()):
+        return _zeitpunkt(v) if len(v.strip()) > 10 else _datum_text(v)
+    return str(v)
+
+
 def _stand(res: dict) -> None:
-    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind."""
+    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind. Unbekannte Schlüssel ohne Rohnamen."""
     st = res.get("stand") or {}
+    bs = res.get("bestandStand") if isinstance(res.get("bestandStand"), dict) else {}
+    # Eine Aussage zum Stand des Amazon-Bestands: Satz des Tools (stand.amazonBestandStand, sonst bestandStand.satz) statt
+    # des Stichtags. Ohne beide Felder (älteres Tool, andere Tür) bleibt die Zeile wie bis 0.20.0.
+    satz = st.get("amazonBestandStand") or bs.get("satz")
+    paare = list(st.items())
+    if satz:
+        # Der Satz steht, wo das Tool ihn hinlegt; fehlt er in stand, an der Stelle des Stichtags (sonst am Ende).
+        if "amazonBestandStand" not in st:
+            stelle = next((i for i, (k, _) in enumerate(paare) if k == "amazonBestandTag"), len(paare))
+            paare.insert(stelle, ("amazonBestandStand", satz))
+        paare = [(k, satz if k == "amazonBestandStand" else v) for k, v in paare if k != "amazonBestandTag"]
     teile = [f"abgerufen {_zeitpunkt(st.get('abgerufen')) or '?'}"]
     if st.get("daten"):
         teile.append(f"Daten {st['daten']}")
-    for k, v in st.items():
+    for k, v in paare:
         if k in ("abgerufen", "daten"):
             continue
-        label, fmt = STAND_TEXT.get(k, (k, str))
+        if k not in STAND_TEXT:
+            wert = _stand_unbekannt(v)
+            if wert:
+                teile.append(wert)
+            continue
+        label, fmt = STAND_TEXT[k]
         teile.append(f"{label} {fmt(v) if v else 'unbekannt'}")
     print("Stand: " + ", ".join(teile))
 
@@ -1547,12 +1577,26 @@ def cmd_sendung(args: list[str]) -> None:
 
 # ---- Bestand
 
+def _abruf_text(abruf: str | None) -> str | None:
+    """`fba.abruf` (Abruf direkt von Amazon, ISO) in der Form des Tools (bestandStandSatz in bestand-alter.ts): `heute 06:10`
+    bzw. `vom 18.11. 06:10, 1 Tag alt`, Berliner Zeit. None ohne Abruf (Openbridge, älteres Tool) oder unlesbar."""
+    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}:\d{2})$", _zeitpunkt(abruf) or "")
+    if not m:
+        return None
+    tag = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    tage = (datetime.strptime(_heute_berlin(), "%Y-%m-%d") - tag).days
+    if tage <= 0:
+        return f"heute {m.group(4)}"
+    return f"vom {m.group(1)}.{m.group(2)}. {m.group(4)}, {tage} {'Tag' if tage == 1 else 'Tage'} alt"
+
+
 def _bestand_zeile(b: dict) -> str:
     teile = [b.get("sku") or "?", b.get("name") or "", b.get("marktplatz") or ""]
     f = b.get("fba")
     if f:
         zulauf = (f.get("zulaufWorking") or 0) + (f.get("zulaufShipped") or 0) + (f.get("zulaufReceiving") or 0)
-        teile.append(f"FBA {_n(f.get('verfuegbar'))} verfügbar, {_n(f.get('reserviert'))} reserviert, Amazon-Zulauf {_n(zulauf)} (vom {_datum_text(f.get('datum'))})")
+        wann = _abruf_text(f.get("abruf")) or f"vom {_datum_text(f.get('datum'))}"
+        teile.append(f"FBA {_n(f.get('verfuegbar'))} verfügbar, {_n(f.get('reserviert'))} reserviert, Amazon-Zulauf {_n(zulauf)} ({wann})")
     else:
         teile.append("FBA unbekannt")
     if b.get("lagerGesamt") is None:
