@@ -773,28 +773,39 @@ STAND_TEXT = {
     "letzterLauf": ("letzter Planungslauf", _zeitpunkt),
     "lager": ("Lager", str),
     "neuSeit": ("neu seit", _datum_text),
-    "hinweis": ("hinweis", str),  # bestand, bestellplanung: Satz des Tools; Beschriftung wie bis 0.20.0, Ausgabe unverändert
+    # bestand, bestellplanung: Satz des Tools; Beschriftung wie bis 0.20.0. Neben dem Satz zum Bestand „Hinweis:“ (_stand).
+    "hinweis": ("hinweis", str),
 }
 
 
-def _stand_unbekannt(v) -> str | None:
-    """Wert eines Stand-Schlüssels, den dieses Plugin noch nicht kennt (neueres Tool): ohne den Rohnamen, Datum und
-    Zeitpunkt lesbar, sonst der Text des Tools; leer oder kein Text › nichts (ohne Beschriftung sagt „unbekannt“ nichts)."""
-    if isinstance(v, bool) or not isinstance(v, (str, int, float)) or v == "":
-        return None
-    if isinstance(v, str) and re.match(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}.*)?$", v.strip()):
-        return _zeitpunkt(v) if len(v.strip()) > 10 else _datum_text(v)
-    return str(v)
+def _text(v) -> str | None:
+    """Neue Felder des Tools nur als nicht leere Zeichenkette auswerten; jeder andere Typ gilt als fehlend (nie Abbruch)."""
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def _ohne_klammern(s: str) -> str:
+    """„Amazon-Bestand vom 16.11. (Openbridge), 3 Tage alt“ › „Amazon-Bestand vom 16.11., 3 Tage alt“ (zum Vergleich)."""
+    return re.sub(r"\s+", " ", re.sub(r"\s*\([^)]*\)", "", s)).strip()
+
+
+def _hinweis_ohne_stand(hinweis: str, satz: str) -> str:
+    """Hinweis des Tools ohne die Standangabe, die schon in der Stand-Zeile steht: Beginnt er mit demselben Stand (vor dem
+    ersten Doppelpunkt, Quelle in Klammern zählt nicht), nur der Rest dahinter; sonst ganz."""
+    kopf, doppelpunkt, rest = hinweis.partition(":")
+    if doppelpunkt and rest.strip() and _ohne_klammern(kopf) == _ohne_klammern(satz):
+        return rest.strip()
+    return hinweis
 
 
 def _stand(res: dict) -> None:
-    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind. Unbekannte Schlüssel ohne Rohnamen."""
+    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind. Unbekannte Schlüssel erscheinen nicht."""
     st = res.get("stand") or {}
     bs = res.get("bestandStand") if isinstance(res.get("bestandStand"), dict) else {}
     # Eine Aussage zum Stand des Amazon-Bestands: Satz des Tools (stand.amazonBestandStand, sonst bestandStand.satz) statt
-    # des Stichtags. Ohne beide Felder (älteres Tool, andere Tür) bleibt die Zeile wie bis 0.20.0.
-    satz = st.get("amazonBestandStand") or bs.get("satz")
-    paare = list(st.items())
+    # des Stichtags. Ohne beide Felder (älteres Tool, andere Tür) bleibt die Zeile wie bis 0.20.0; null, leer oder ein
+    # anderer Typ zählt als fehlend.
+    satz = _text(st.get("amazonBestandStand")) or _text(bs.get("satz"))
+    paare = [(k, v) for k, v in st.items() if k != "amazonBestandStand" or satz]
     if satz:
         # Der Satz steht, wo das Tool ihn hinlegt; fehlt er in stand, an der Stelle des Stichtags (sonst am Ende).
         if "amazonBestandStand" not in st:
@@ -805,12 +816,11 @@ def _stand(res: dict) -> None:
     if st.get("daten"):
         teile.append(f"Daten {st['daten']}")
     for k, v in paare:
-        if k in ("abgerufen", "daten"):
+        if k in ("abgerufen", "daten") or k not in STAND_TEXT:
             continue
-        if k not in STAND_TEXT:
-            wert = _stand_unbekannt(v)
-            if wert:
-                teile.append(wert)
+        if satz and k == "hinweis" and _text(v):
+            # Nur neben dem Satz des Tools: Stand nicht zweimal, Beschriftung „Hinweis:“ (ohne Satz bleibt „hinweis“).
+            teile.append(f"Hinweis: {_hinweis_ohne_stand(_text(v), satz)}")
             continue
         label, fmt = STAND_TEXT[k]
         teile.append(f"{label} {fmt(v) if v else 'unbekannt'}")
@@ -1580,6 +1590,8 @@ def cmd_sendung(args: list[str]) -> None:
 def _abruf_text(abruf: str | None) -> str | None:
     """`fba.abruf` (Abruf direkt von Amazon, ISO) in der Form des Tools (bestandStandSatz in bestand-alter.ts): `heute 06:10`
     bzw. `vom 18.11. 06:10, 1 Tag alt`, Berliner Zeit. None ohne Abruf (Openbridge, älteres Tool) oder unlesbar."""
+    if not _text(abruf):  # Zahl, Objekt, null oder leer: wie ohne Feld
+        return None
     m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}:\d{2})$", _zeitpunkt(abruf) or "")
     if not m:
         return None

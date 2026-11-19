@@ -53,6 +53,8 @@ def lauf(args, json_antwort):
     except SystemExit as e:
         if isinstance(e.code, str):
             print(e.code)
+    except Exception as e:  # ein Abbruch ist ein Fehlfall, kein Ende des Prüfskripts
+        print(f"Abbruch: {type(e).__name__}: {e}")
     finally:
         sys.stdout, sys.stderr = alt_out, alt_err
     return puffer.getvalue()
@@ -141,7 +143,18 @@ s["bestand"] = [dict(b, fba=dict(b["fba"], datum="2026-11-16", abruf=None)) for 
 aus = lauf(["bestand", "--suche", "SKU"], s)
 pruefe("Rückfall: Satz Openbridge wörtlich, kein Stichtag daneben", "Bestand: Amazon-Bestand vom 16.11. (Openbridge), 3 Tage alt, Amazon-Abgleich" in aus and ", Amazon-Bestand vom 16.11., Amazon-Abgleich" not in aus, aus)
 pruefe("Rückfall: je SKU „(vom 16.11.)“", aus.count("Amazon-Zulauf 10 (vom 16.11.)") == 2, aus)
-pruefe("Rückfall: Hinweis des Tools bleibt wie bisher", ", hinweis Amazon-Bestand vom 16.11., 3 Tage alt: Die Prognose" in aus, aus)
+pruefe("Rückfall: Stand genau einmal, Hinweis ohne die Standangabe unter „Hinweis:“",
+       stand_zeile(aus) == ["Stand: abgerufen 19.11.2026 17:00, Daten synchronisiert, Bestand: Amazon-Bestand vom 16.11. (Openbridge), 3 Tage alt, Amazon-Abgleich 19.11.2026 06:30, Lager live, "
+                            "Hinweis: Die Prognose rechnet ihn als heutigen Bestand, Verkäufe seither sind nicht abgezogen (normal höchstens 2 Tage)."]
+       and aus.count("16.11.") == 3 and "hinweis" not in aus, aus)  # 16.11.: Stand-Zeile und zwei SKU-Zeilen
+s["stand"]["hinweis"] = "Amazon-Bestand vom 15.11., 4 Tage alt: Anderer Stichtag."
+aus = lauf(["bestand", "--suche", "SKU"], s)
+pruefe("Rückfall: Hinweis mit anderem Anfang ganz unter „Hinweis:“", ", Hinweis: Amazon-Bestand vom 15.11., 4 Tage alt: Anderer Stichtag." in aus and "hinweis" not in aus, aus)
+s["stand"]["hinweis"] = "Shops sind gerade nicht abgeglichen."
+aus = lauf(["bestand", "--suche", "SKU"], s)
+pruefe("Rückfall: Hinweis ohne Doppelpunkt ganz", ", Hinweis: Shops sind gerade nicht abgeglichen." in aus, aus)
+alt_hinweis = lauf(["bestand", "--suche", "SKU"], {"bestand": [B], "anzahl": 1, "stand": dict(STAND_ALT, hinweis="Amazon-Bestand vom 17.11., 3 Tage alt: Rest.")})
+pruefe("älteres Tool mit Hinweis: wie bis 0.20.0 („hinweis“ klein, ganz)", stand_zeile(alt_hinweis) == [ZEILE_ALT + ", hinweis Amazon-Bestand vom 17.11., 3 Tage alt: Rest."], alt_hinweis)
 
 # 7. bestandStand ohne stand.amazonBestandStand: Satz an der Stelle des Stichtags
 s = antwort_neu("x", HEUTE, HEUTE["abruf"])
@@ -149,13 +162,42 @@ del s["stand"]["amazonBestandStand"]
 aus = lauf(["bestand", "--suche", "SKU"], s)
 pruefe("nur bestandStand: Satz an der Stelle des Stichtags", stand_zeile(aus) == ["Stand: abgerufen 19.11.2026 17:00, Daten synchronisiert, Bestand: Amazon-Bestand heute 06:10, Amazon-Abgleich 19.11.2026 06:30, Lager live"], aus)
 
-# 8. Unbekannte künftige Schlüssel: kein Rohname; Wert lesbar, leer › nichts
-s = {"bestand": [B], "anzahl": 1, "stand": dict(STAND_ALT, kuenftigSatz="Shops bis gestern vollständig", kuenftigZeit="2026-11-19T05:10:00Z", kuenftigTag="2026-11-18", kuenftigLeer=None, kuenftigListe=["a"])}
+# 8. Unbekannte künftige Schlüssel: erscheinen gar nicht (kein Rohname, keine nackte Zahl, kein leeres Glied)
+s = {"bestand": [B], "anzahl": 1, "stand": dict(STAND_ALT, kuenftigSatz="Shops bis gestern vollständig", kuenftigZeit="2026-11-19T05:10:00Z",
+                                                  kuenftigZahl=3, kuenftigNull=0, kuenftigLeer=None, kuenftigBlank="   ", kuenftigListe=["a"])}
 aus = lauf(["bestand", "--suche", "SKU"], s)
 pruefe("unbekannt: kein Rohname", "kuenftig" not in aus, aus)
-pruefe("unbekannt: Satz, Zeitpunkt und Tag lesbar, leer und Liste weg", stand_zeile(aus) == [ZEILE_ALT + ", Shops bis gestern vollständig, 19.11.2026 06:10, 18.11."], aus)
+pruefe("unbekannt: nichts davon in der Stand-Zeile", stand_zeile(aus) == [ZEILE_ALT], aus)
 
-# 9. Andere Befehle: bestellplanung mit hinweis wie bisher (Beschriftung „hinweis“ unverändert)
+# 9. Unerwartete Typen der neuen Felder: nie Abbruch, gilt als fehlend (alte Anzeige)
+for name, fba_abruf, bs, satz_bot in (
+    ("abruf Zahl", 1763529000, None, None),
+    ("abruf Objekt", {"zeit": "06:10"}, None, None),
+    ("abruf Liste", ["2026-11-19T05:10:00Z"], None, None),
+    ("abruf Text, kein Zeitpunkt", "gleich", None, None),
+    ("bestandStand Text", None, "Amazon-Bestand heute 06:10", None),
+    ("satz Zahl", None, {"quelle": "amazon_direkt", "satz": 5}, None),
+    ("satz Liste", None, {"satz": ["Amazon-Bestand heute 06:10"]}, None),
+    ("amazonBestandStand Objekt", None, None, {"satz": "x"}),
+    ("amazonBestandStand Zahl", None, None, 7),
+):
+    s = {"bestand": [mit_abruf(B, fba_abruf), mit_abruf(B2, fba_abruf)], "anzahl": 2, "stand": dict(STAND_ALT)}
+    if bs is not None:
+        s["bestandStand"] = bs
+    if satz_bot is not None:
+        s["stand"] = dict(list(STAND_ALT.items())[:2] + [("amazonBestandStand", satz_bot)] + list(STAND_ALT.items())[2:])
+    aus = lauf(["bestand", "--suche", "SKU"], s)
+    pruefe(f"Typ: {name} › kein Abbruch, alte Anzeige", aus == alt, aus)
+
+# 10. stand.amazonBestandStand null oder leer: gilt als fehlend
+for leer in (None, "", "  "):
+    st = dict(list(STAND_ALT.items())[:2] + [("amazonBestandStand", leer)] + list(STAND_ALT.items())[2:])
+    aus = lauf(["bestand", "--suche", "SKU"], {"bestand": [B, B2], "anzahl": 2, "stand": st})
+    pruefe(f"amazonBestandStand {leer!r} ohne bestandStand: alte Anzeige, nie „Bestand: unbekannt“", aus == alt, aus)
+    aus = lauf(["bestand", "--suche", "SKU"], {"bestand": [B, B2], "anzahl": 2, "stand": st, "bestandStand": OB})
+    pruefe(f"amazonBestandStand {leer!r} mit bestandStand: dessen Satz", stand_zeile(aus) == [zeile], aus)
+
+# 11. Andere Befehle: bestellplanung mit hinweis wie bisher (Beschriftung „hinweis“ unverändert)
 aus = lauf(["bestellplanung"], {"zeilen": [], "anzahl": 0, "stand": {"abgerufen": "2026-11-19T16:00:00Z", "daten": "live", "amazonBestandTag": "2026-11-17", "amazonBisTag": "2026-11-17", "letzterLauf": None, "hinweis": "Vorschläge eben gerechnet."}})
 pruefe("bestellplanung: Stand-Zeile wie bis 0.20.0", "Stand: abgerufen 19.11.2026 17:00, Daten live, Amazon-Bestand vom 17.11., Amazon-Verkäufe bis 17.11., letzter Planungslauf unbekannt, hinweis Vorschläge eben gerechnet." in aus, aus)
 
