@@ -763,6 +763,9 @@ def _zeitpunkt(wert: str | None) -> str | None:
 
 
 STAND_TEXT = {
+    # Satz des Tools zum Stand des Amazon-Bestands (Bot-Tür bestand, Auftrag 495), wörtlich: „Amazon-Bestand heute 06:10
+    # (Amazon direkt)“ bzw. „Amazon-Bestand vom 17.11. (Openbridge), 2 Tage alt“. Steht er da, entfällt amazonBestandTag.
+    "amazonBestandStand": ("Bestand:", str),
     "amazonBestandTag": ("Amazon-Bestand vom", _datum_text),
     "amazonBisTag": ("Amazon-Verkäufe bis", _datum_text),
     "amazonSync": ("Amazon-Abgleich", _zeitpunkt),
@@ -770,19 +773,56 @@ STAND_TEXT = {
     "letzterLauf": ("letzter Planungslauf", _zeitpunkt),
     "lager": ("Lager", str),
     "neuSeit": ("neu seit", _datum_text),
+    # bestand, bestellplanung: Satz des Tools; Beschriftung wie bis 0.20.0. Neben dem Satz zum Bestand „Hinweis:“ (_stand).
+    "hinweis": ("hinweis", str),
 }
 
 
+def _text(v) -> str | None:
+    """Neue Felder des Tools nur als nicht leere Zeichenkette auswerten; jeder andere Typ gilt als fehlend (nie Abbruch)."""
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
+def _ohne_klammern(s: str) -> str:
+    """„Amazon-Bestand vom 16.11. (Openbridge), 3 Tage alt“ › „Amazon-Bestand vom 16.11., 3 Tage alt“ (zum Vergleich)."""
+    return re.sub(r"\s+", " ", re.sub(r"\s*\([^)]*\)", "", s)).strip()
+
+
+def _hinweis_ohne_stand(hinweis: str, satz: str) -> str:
+    """Hinweis des Tools ohne die Standangabe, die schon in der Stand-Zeile steht: Beginnt er mit demselben Stand (vor dem
+    ersten Doppelpunkt, Quelle in Klammern zählt nicht), nur der Rest dahinter; sonst ganz."""
+    kopf, doppelpunkt, rest = hinweis.partition(":")
+    if doppelpunkt and rest.strip() and _ohne_klammern(kopf) == _ohne_klammern(satz):
+        return rest.strip()
+    return hinweis
+
+
 def _stand(res: dict) -> None:
-    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind."""
+    """Immer ausgeben: wann abgerufen und wie aktuell die Quellen sind. Unbekannte Schlüssel erscheinen nicht."""
     st = res.get("stand") or {}
+    bs = res.get("bestandStand") if isinstance(res.get("bestandStand"), dict) else {}
+    # Eine Aussage zum Stand des Amazon-Bestands: Satz des Tools (stand.amazonBestandStand, sonst bestandStand.satz) statt
+    # des Stichtags. Ohne beide Felder (älteres Tool, andere Tür) bleibt die Zeile wie bis 0.20.0; null, leer oder ein
+    # anderer Typ zählt als fehlend.
+    satz = _text(st.get("amazonBestandStand")) or _text(bs.get("satz"))
+    paare = [(k, v) for k, v in st.items() if k != "amazonBestandStand" or satz]
+    if satz:
+        # Der Satz steht, wo das Tool ihn hinlegt; fehlt er in stand, an der Stelle des Stichtags (sonst am Ende).
+        if "amazonBestandStand" not in st:
+            stelle = next((i for i, (k, _) in enumerate(paare) if k == "amazonBestandTag"), len(paare))
+            paare.insert(stelle, ("amazonBestandStand", satz))
+        paare = [(k, satz if k == "amazonBestandStand" else v) for k, v in paare if k != "amazonBestandTag"]
     teile = [f"abgerufen {_zeitpunkt(st.get('abgerufen')) or '?'}"]
     if st.get("daten"):
         teile.append(f"Daten {st['daten']}")
-    for k, v in st.items():
-        if k in ("abgerufen", "daten"):
+    for k, v in paare:
+        if k in ("abgerufen", "daten") or k not in STAND_TEXT:
             continue
-        label, fmt = STAND_TEXT.get(k, (k, str))
+        if satz and k == "hinweis" and _text(v):
+            # Nur neben dem Satz des Tools: Stand nicht zweimal, Beschriftung „Hinweis:“ (ohne Satz bleibt „hinweis“).
+            teile.append(f"Hinweis: {_hinweis_ohne_stand(_text(v), satz)}")
+            continue
+        label, fmt = STAND_TEXT[k]
         teile.append(f"{label} {fmt(v) if v else 'unbekannt'}")
     print("Stand: " + ", ".join(teile))
 
@@ -1547,12 +1587,28 @@ def cmd_sendung(args: list[str]) -> None:
 
 # ---- Bestand
 
+def _abruf_text(abruf: str | None) -> str | None:
+    """`fba.abruf` (Abruf direkt von Amazon, ISO) in der Form des Tools (bestandStandSatz in bestand-alter.ts): `heute 06:10`
+    bzw. `vom 18.11. 06:10, 1 Tag alt`, Berliner Zeit. None ohne Abruf (Openbridge, älteres Tool) oder unlesbar."""
+    if not _text(abruf):  # Zahl, Objekt, null oder leer: wie ohne Feld
+        return None
+    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4}) (\d{2}:\d{2})$", _zeitpunkt(abruf) or "")
+    if not m:
+        return None
+    tag = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    tage = (datetime.strptime(_heute_berlin(), "%Y-%m-%d") - tag).days
+    if tage <= 0:
+        return f"heute {m.group(4)}"
+    return f"vom {m.group(1)}.{m.group(2)}. {m.group(4)}, {tage} {'Tag' if tage == 1 else 'Tage'} alt"
+
+
 def _bestand_zeile(b: dict) -> str:
     teile = [b.get("sku") or "?", b.get("name") or "", b.get("marktplatz") or ""]
     f = b.get("fba")
     if f:
         zulauf = (f.get("zulaufWorking") or 0) + (f.get("zulaufShipped") or 0) + (f.get("zulaufReceiving") or 0)
-        teile.append(f"FBA {_n(f.get('verfuegbar'))} verfügbar, {_n(f.get('reserviert'))} reserviert, Amazon-Zulauf {_n(zulauf)} (vom {_datum_text(f.get('datum'))})")
+        wann = _abruf_text(f.get("abruf")) or f"vom {_datum_text(f.get('datum'))}"
+        teile.append(f"FBA {_n(f.get('verfuegbar'))} verfügbar, {_n(f.get('reserviert'))} reserviert, Amazon-Zulauf {_n(zulauf)} ({wann})")
     else:
         teile.append("FBA unbekannt")
     if b.get("lagerGesamt") is None:

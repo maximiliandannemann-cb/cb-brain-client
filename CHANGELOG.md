@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.21.0 (19.11.2026)
+
+- `bestand` sagt einmal, von wann der Amazon-Bestand ist, und zwar mit dem Satz des Tools: „Bestand: Amazon-Bestand heute 06:10 (Amazon direkt)“ oder im Rückfall „Bestand: Amazon-Bestand vom 17.11. (Openbridge), 2 Tage alt“. Die zweite Angabe „Amazon-Bestand vom <Tag>“ daneben fällt dann weg.
+- Je Produkt steht beim Abruf direkt von Amazon die Uhrzeit in derselben Form („heute 06:10“, „vom 18.11. 06:10, 1 Tag alt“) statt „vom <Tag>“. Ohne Abruf (Openbridge) bleibt es „vom <Tag>“.
+- Ist der Bestand alt, steht das Datum trotzdem nur einmal da: Der Hinweis des Tools erscheint unter „Hinweis:“ ohne die Standangabe, die schon vorne steht („Hinweis: Die Prognose rechnet ihn als heutigen Bestand …“).
+- In der Stand-Zeile erscheinen keine technischen Feldnamen mehr. Angaben des Tools, die das Plugin noch nicht kennt, lässt es weg; alle heutigen Angaben aller Befehle bleiben, wie sie waren.
+- Kommt eines der neuen Felder leer oder in unerwarteter Form, bricht `bestand` nicht ab, sondern zeigt den Stand wie bisher.
+- `/ware`: Den Stand des Bestands wörtlich aus dem Tool nennen, nicht umformulieren.
+- Prüfskript `tests/pruefe-bestand-stand.py`.
+- Braucht das Tool mit `bestandStand` in `/api/brain-read/bestand` (company-interface, Auftrag 495). Mit einem älteren Tool bleibt die Ausgabe wie bisher.
+
 ## 0.20.0 (06.11.2026)
 
 - Neu: `faelle`: Reklamationsfälle ab Stufe `pruefen` mit Rest, Saldo, Vorschlag und bestehender Arbeit, dazu die Zahl der Fälle, die noch zählen, und ungeprüfte Positionen (Mengen unbekannt, nie Rest 0).
